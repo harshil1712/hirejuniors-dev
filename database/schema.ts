@@ -2,12 +2,6 @@ import { relations, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 
-export const guestBook = sqliteTable("guestBook", {
-  id: integer().primaryKey({ autoIncrement: true }),
-  name: text().notNull(),
-  email: text().notNull().unique(),
-});
-
 export const jobs = sqliteTable("jobs", {
   id: integer().primaryKey({ autoIncrement: true }),
   listingId: text('listing_id').notNull().unique(),
