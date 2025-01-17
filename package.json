@@ -1,0 +1,47 @@
+{
+	"name": "hirejuniors-react-router",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "react-router build",
+		"db:generate": "dotenv -- drizzle-kit generate",
+		"db:migrate": "wrangler d1 migrations apply --local DB",
+		"db:migrate-production": "dotenv -- drizzle-kit migrate",
+		"dev": "react-router dev",
+		"start": "react-router build && wrangler dev --test-scheduled",
+		"typecheck": "react-router typegen && tsc -b"
+	},
+	"dependencies": {
+		"@radix-ui/react-slot": "^1.1.1",
+		"@react-router/node": "^7.1.1",
+		"@react-router/serve": "^7.1.1",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"drizzle-orm": "^0.38.0",
+		"drizzle-zod": "^0.6.1",
+		"isbot": "^5.1.17",
+		"lucide-react": "^0.471.0",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"react-router": "^7.1.1",
+		"tailwind-merge": "^2.6.0",
+		"tailwindcss-animate": "^1.0.7"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20241112.0",
+		"@hiogawa/vite-node-miniflare": "0.1.1",
+		"@react-router/dev": "^7.1.1",
+		"@types/node": "^20",
+		"@types/react": "^19.0.1",
+		"@types/react-dom": "^19.0.1",
+		"autoprefixer": "^10.4.20",
+		"dotenv-cli": "^7.4.3",
+		"drizzle-kit": "~0.28.1",
+		"postcss": "^8.4.49",
+		"tailwindcss": "^3.4.16",
+		"typescript": "^5.7.2",
+		"vite": "^5.4.11",
+		"vite-tsconfig-paths": "^5.1.4",
+		"wrangler": "^3.87.0"
+	}
+}
