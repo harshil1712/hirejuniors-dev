@@ -4,5 +4,5 @@ interface Env {
 	DB: D1Database;
 	AMAZON: Workflow;
 	AI: Ai;
-	SECRET_KEY: string;
+	AUTH_TOKEN: string;
 }
