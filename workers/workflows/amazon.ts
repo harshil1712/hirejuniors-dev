@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint, WorkflowStep, type WorkflowEvent } from 'cloudflare:workers';
 import { drizzle } from 'drizzle-orm/d1';
 import { z } from 'zod';
-import * as schema from "~/database/schema";
+import * as schema from "../../database/schema";
 
 const jobResponseSchema = z.array(z.object({
 	id: z.string(),
@@ -18,7 +18,7 @@ const jobResponseSchema = z.array(z.object({
 	preferred_qualifications: z.string(),
 }))
 
-const amazonApi = "https://www.amazon.jobs/en/search.json?sort=recent&category%5B%5D=software-development&category%5B%5D=operations-it-support-engineering&category%5B%5D=project-program-product-management-technical&category%5B%5D=solutions-architect&category%5B%5D=machine-learning-science&category%5B%5D=systems-quality-security-engineering&category%5B%5D=hardware-development&category%5B%5D=data-science&category%5B%5D=research-science&business_category%5B%5D=student-programs&radius=24km&facets%5B%5D=normalized_country_code&facets%5B%5D=normalized_state_name&facets%5B%5D=normalized_city_name&facets%5B%5D=location&facets%5B%5D=business_category&facets%5B%5D=category&facets%5B%5D=schedule_type_id&facets%5B%5D=employee_class&facets%5B%5D=normalized_location&facets%5B%5D=job_function_id&facets%5B%5D=is_manager&facets%5B%5D=is_intern&offset=0&result_limit=100&sort=recent&latitude=&longitude=&loc_group_id=&loc_query=&base_query=&city=&country=&region=&county=&query_options=&"
+const amazonApi = "https://www.amazon.jobs/en/search.json?sort=recent&category%5B%5D=software-development&category%5B%5D=operations-it-support-engineering&category%5B%5D=project-program-product-management-technical&category%5B%5D=solutions-architect&category%5B%5D=machine-learning-science&category%5B%5D=systems-quality-security-engineering&category%5B%5D=hardware-development&category%5B%5D=data-science&category%5B%5D=research-science&business_category%5B%5D=student-programs&radius=24km&facets%5B%5D=normalized_country_code&facets%5B%5D=normalized_state_name&facets%5B%5D=normalized_city_name&facets%5B%5D=location&facets%5B%5D=business_category&facets%5B%5D=category&facets%5B%5D=schedule_type_id&facets%5B%5D=employee_class&facets%5B%5D=normalized_location&facets%5B%5D=job_function_id&facets%5B%5D=is_manager&facets%5B%5D=is_intern&offset=0&result_limit=20&sort=recent&latitude=&longitude=&loc_group_id=&loc_query=&base_query=&city=&country=&region=&county=&query_options=&"
 
 export class AmazonWorkflow extends WorkflowEntrypoint {
 	async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
@@ -59,7 +59,7 @@ export class AmazonWorkflow extends WorkflowEntrypoint {
 			// console.log('AI Filtered Jobs:', aiFilteredJobs.response);
 		})
 		const ingestJobs = await step.do('ingest jobs into database', async () => {
-			console.log('Step 2 - Ingesting Jobs');
+			console.log('Step 3 - Ingesting Jobs');
 			// @ts-expect-error
 			const db = drizzle(this.env.DB);
 			// Map the jobs to the schema
@@ -88,6 +88,8 @@ export class AmazonWorkflow extends WorkflowEntrypoint {
 					set: schema.jobs,
 				});
 			}
+
+			console.log('Ingested Jobs:', jobs.length);
 		})
 	}
 }

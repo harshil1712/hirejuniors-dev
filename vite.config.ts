@@ -1,55 +1,34 @@
-import { vitePluginViteNodeMiniflare } from "@hiogawa/vite-node-miniflare";
-import { reactRouter } from "@react-router/dev/vite";
 import autoprefixer from "autoprefixer";
 import tailwindcss from "tailwindcss";
-import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { reactRouter } from "@react-router/dev/vite";
+import { defineConfig } from "vite";
+import { cloudflare } from "@cloudflare/vite-plugin";
 
-export default defineConfig(({ isSsrBuild }) => ({
-  build: {
-    rollupOptions: isSsrBuild
-      ? {
-        input: "./workers/app.ts",
-        external: ["cloudflare:workers"]
-      }
-      : undefined,
-  },
+// By default react-router's dev server uses Node.js, so we want to remove their server
+// configuration to use the dev server provided by Vite + Workerd.
+const reactRouterPlugins = reactRouter();
+const reactRouterPlugin = reactRouterPlugins.find(
+  (plugin) => plugin.name === "react-router",
+)!;
+reactRouterPlugin.configureServer = undefined;
+
+export default defineConfig({
   css: {
     postcss: {
       plugins: [tailwindcss, autoprefixer],
     },
   },
+  plugins: [cloudflare(), reactRouterPlugins, tsconfigPaths()],
   ssr: {
-    target: "webworker",
-    noExternal: true,
-    external: ["node:async_hooks", "cloudflare:workers"],
     resolve: {
-      conditions: ["workerd", "browser"],
-    },
-    optimizeDeps: {
-      include: [
-        "react",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-        "react-dom",
-        "react-dom/server",
-        "react-router",
-      ],
+      conditions: ["workerd", "worker", "browser"],
     },
   },
-  plugins: [
-    vitePluginViteNodeMiniflare({
-      entry: "./workers/app.ts",
-      miniflareOptions: (options) => {
-        options.compatibilityDate = "2024-11-18";
-        options.compatibilityFlags = ["nodejs_compat"];
-        options.d1Databases = { DB: "your-database-id" };
-        // match where wrangler applies migrations to
-        options.d1Persist = ".wrangler/state/v3/d1";
-        // options.workflows = { AmazonWorkflow: { name: "AmazonWorkflow", className: "AmazonWorkflow" } };
-      },
-    }),
-    reactRouter(),
-    tsconfigPaths(),
-  ],
-}));
+  resolve: {
+    mainFields: ["browser", "module", "main"],
+  },
+  build: {
+    minify: true,
+  },
+});

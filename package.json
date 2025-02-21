@@ -8,12 +8,15 @@
 		"db:migrate": "wrangler d1 migrations apply --local DB",
 		"db:migrate-production": "dotenv -- drizzle-kit migrate",
 		"dev": "react-router dev",
-		"start": "react-router build && wrangler dev --test-scheduled",
-		"typecheck": "react-router typegen && tsc -b"
+		"start": "wrangler dev --test-scheduled",
+		"typecheck": "wrangler types && react-router typegen && tsc",
+		"typegen": "wrangler types && react-router typegen",
+		"cf-typegen": "wrangler types",
+		"deploy": "react-router build && wrangler deploy",
+		"preview": "react-router build && wrangler dev --test-scheduled"
 	},
 	"dependencies": {
 		"@radix-ui/react-slot": "^1.1.1",
-		"@react-router/node": "^7.1.1",
 		"@react-router/serve": "^7.1.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
@@ -28,20 +31,20 @@
 		"tailwindcss-animate": "^1.0.7"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20241112.0",
-		"@hiogawa/vite-node-miniflare": "0.1.1",
+		"@cloudflare/vite-plugin": "^0.0.8",
+		"@cloudflare/workers-types": "^4.20250204.0",
 		"@react-router/dev": "^7.1.1",
+		"@tailwindcss/vite": "^4.0.6",
 		"@types/node": "^20",
 		"@types/react": "^19.0.1",
 		"@types/react-dom": "^19.0.1",
 		"autoprefixer": "^10.4.20",
-		"dotenv-cli": "^7.4.3",
 		"drizzle-kit": "~0.28.1",
+		"typescript": "^5.7.2",
 		"postcss": "^8.4.49",
 		"tailwindcss": "^3.4.16",
-		"typescript": "^5.7.2",
-		"vite": "^5.4.11",
+		"vite": "^6.1.0",
 		"vite-tsconfig-paths": "^5.1.4",
-		"wrangler": "^3.87.0"
+		"wrangler": "^3.108.1"
 	}
 }
