@@ -15,8 +15,8 @@ migrations_dir = "drizzle"
 # binding = "AI"
 
 [triggers]
-# trigger every 15 days
-crons = ["* * * 15 *"]
+# trigger every 10 days
+crons = ["* * * 10 *"]
 
 [[workflows]]
 name = "amazon"

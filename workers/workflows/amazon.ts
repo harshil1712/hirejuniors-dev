@@ -2,6 +2,7 @@ import { WorkflowEntrypoint, WorkflowStep, type WorkflowEvent } from 'cloudflare
 import { drizzle } from 'drizzle-orm/d1';
 import { z } from 'zod';
 import * as schema from "../../database/schema";
+import { sql } from 'drizzle-orm';
 
 const jobResponseSchema = z.array(z.object({
 	id: z.string(),
@@ -18,9 +19,37 @@ const jobResponseSchema = z.array(z.object({
 	preferred_qualifications: z.string(),
 }))
 
-const amazonApi = "https://www.amazon.jobs/en/search.json?sort=recent&category%5B%5D=software-development&category%5B%5D=operations-it-support-engineering&category%5B%5D=project-program-product-management-technical&category%5B%5D=solutions-architect&category%5B%5D=machine-learning-science&category%5B%5D=systems-quality-security-engineering&category%5B%5D=hardware-development&category%5B%5D=data-science&category%5B%5D=research-science&business_category%5B%5D=student-programs&radius=24km&facets%5B%5D=normalized_country_code&facets%5B%5D=normalized_state_name&facets%5B%5D=normalized_city_name&facets%5B%5D=location&facets%5B%5D=business_category&facets%5B%5D=category&facets%5B%5D=schedule_type_id&facets%5B%5D=employee_class&facets%5B%5D=normalized_location&facets%5B%5D=job_function_id&facets%5B%5D=is_manager&facets%5B%5D=is_intern&offset=0&result_limit=20&sort=recent&latitude=&longitude=&loc_group_id=&loc_query=&base_query=&city=&country=&region=&county=&query_options=&"
+const amazonApi = "https://www.amazon.jobs/en/search.json?sort=recent&category%5B%5D=software-development&category%5B%5D=operations-it-support-engineering&category%5B%5D=project-program-product-management-technical&category%5B%5D=solutions-architect&category%5B%5D=machine-learning-science&category%5B%5D=systems-quality-security-engineering&category%5B%5D=hardware-development&category%5B%5D=data-science&category%5B%5D=research-science&business_category%5B%5D=student-programs&radius=24km&facets%5B%5D=normalized_country_code&facets%5B%5D=normalized_state_name&facets%5B%5D=normalized_city_name&facets%5B%5D=location&facets%5B%5D=business_category&facets%5B%5D=category&facets%5B%5D=schedule_type_id&facets%5B%5D=employee_class&facets%5B%5D=normalized_location&facets%5B%5D=job_function_id&facets%5B%5D=is_manager&facets%5B%5D=is_intern&offset=0&result_limit=50&sort=recent&latitude=&longitude=&loc_group_id=&loc_query=&base_query=&city=&country=&region=&county=&query_options=&"
 
-export class AmazonWorkflow extends WorkflowEntrypoint {
+function isOlderThanThreeMonths(timeString: string): boolean {
+	// Handle full date format (e.g., "February 14, 2024")
+	if (timeString.includes(',')) {
+		const date = new Date(timeString);
+		if (!isNaN(date.getTime())) {
+			const threeMonthsAgo = new Date();
+			threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+			return date < threeMonthsAgo;
+		}
+	}
+
+	// Handle relative time format (e.g., "4 days", "2 months")
+	const matches = timeString.match(/\d+/);
+	if (!matches) return false;
+
+	const num = parseInt(matches[0]);
+	if (isNaN(num)) return false;
+
+	const str = timeString.toLowerCase();
+	if (str.includes('year') || str.includes('yr')) return true;
+	if (str.includes('month') || str.includes('mont')) {
+		return str.includes('about') ? num >= 3 : num > 3;
+	}
+	if (str.includes('day')) return num >= 90;
+
+	return false;
+}
+
+export class AmazonWorkflow extends WorkflowEntrypoint<Env> {
 	async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
 
 		const fetchJobs = await step.do('fetch jobs from Amazon API', async () => {
@@ -30,6 +59,7 @@ export class AmazonWorkflow extends WorkflowEntrypoint {
 			const parsedData = jobResponseSchema.parse(data.jobs)
 			return parsedData
 		});
+
 		const refineJobs = await step.do('refine jobs', async () => {
 			console.log('Step 2 - Refining Jobs');
 			console.log('Total Jobs:', fetchJobs.length);
@@ -60,7 +90,6 @@ export class AmazonWorkflow extends WorkflowEntrypoint {
 		})
 		const ingestJobs = await step.do('ingest jobs into database', async () => {
 			console.log('Step 3 - Ingesting Jobs');
-			// @ts-expect-error
 			const db = drizzle(this.env.DB);
 			// Map the jobs to the schema
 			const jobs = refineJobs.map((job: typeof jobResponseSchema._type[0]) => {
@@ -90,6 +119,45 @@ export class AmazonWorkflow extends WorkflowEntrypoint {
 			}
 
 			console.log('Ingested Jobs:', jobs.length);
+		})
+
+		step.do('Archive Jobs based on portalPostedDate and portalUpdatedTime', async () => {
+			console.log('Step 4 - Archive Jobs based on portalPostedDate and portalUpdatedTime');
+			const db = drizzle(this.env.DB);
+
+			let totalJobs = await db.select({ count: sql<number>`count(*)` }).from(schema.jobs);
+			console.log('Total Active Jobs:', totalJobs);
+
+			const oldJobs = await db.select({
+				id: schema.jobs.id,
+				postTime: schema.jobs.portalPostedDate,
+				updateTime: schema.jobs.portalUpdatedTime,
+				title: schema.jobs.title
+			})
+				.from(schema.jobs)
+				.where(sql`${schema.jobs.portalPostedDate} IS NOT NULL AND ${schema.jobs.portalUpdatedTime} IS NOT NULL AND ${schema.jobs.archived} = 0`);
+
+			const jobsToArchive = oldJobs.filter(job => {
+				const isOldPost = isOlderThanThreeMonths(job.postTime);
+				const isOldUpdate = isOlderThanThreeMonths(job.updateTime);
+				return isOldPost || isOldUpdate;
+			});
+
+			console.log('Jobs to archive:', jobsToArchive.length);
+
+			if (jobsToArchive.length > 0) {
+				// Update jobs in batches of 5 to avoid parameter limits
+				for (let i = 0; i < jobsToArchive.length; i += 5) {
+					const batch = jobsToArchive.slice(i, i + 5);
+					const placeholders = batch.map(() => '?').join(',');
+					await db.run(
+						sql`UPDATE jobs SET archived = 1 WHERE id IN (${sql.join(batch.map(j => j.id), sql`, `)})`
+					);
+				}
+			}
+
+			const activeJobs = await db.select({ count: sql<number>`count(*)` }).from(schema.jobs).where(sql`${schema.jobs.archived} = 0`);
+			console.log('Remaining Active Jobs:', activeJobs);
 		})
 	}
 }
