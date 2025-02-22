@@ -30,7 +30,7 @@ export default function Footer() {
             <h3 className="text-sm font-semibold uppercase tracking-wider">Connect</h3>
             <ul className="mt-4 space-y-4">
               <li><a href="#" className="text-base text-gray-400 hover:text-white">Twitter</a></li>
-              <li><a href="#" className="text-base text-gray-400 hover:text-white">aedIn</a></li>
+              <li><a href="#" className="text-base text-gray-400 hover:text-white">LinkedIn</a></li>
               <li><a href="#" className="text-base text-gray-400 hover:text-white">GitHub</a></li>
             </ul>
           </div>

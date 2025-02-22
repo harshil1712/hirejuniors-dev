@@ -19,6 +19,11 @@ migrations_dir = "drizzle"
 crons = ["* * * 10 *"]
 
 [[workflows]]
+name = "cloudflareJobs"
+binding = "CLOUDFLAREJOBS"
+class_name = "CloudflareWorkflow"
+
+[[workflows]]
 name = "amazon"
 binding = "AMAZON"
 class_name = "AmazonWorkflow"

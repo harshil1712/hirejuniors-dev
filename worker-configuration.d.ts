@@ -3,6 +3,7 @@
 interface Env {
 	DB: D1Database;
 	AMAZON: Workflow;
+	CLOUDFLAREJOBS: Workflow;
 	AI: Ai;
 	AUTH_TOKEN: string;
 }

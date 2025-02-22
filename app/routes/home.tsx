@@ -15,7 +15,6 @@ export function meta({ }: Route.MetaArgs) {
 
 export async function loader({ context }: Route.LoaderArgs) {
   const db = context.db;
-  console.log(context.VALUE_FROM_CLOUDFLARE)
   try {
     const jobs = await db.query.jobs.findMany({
       columns: {

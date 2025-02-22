@@ -13,8 +13,8 @@ export const jobs = sqliteTable("jobs", {
   portalPostedDate: text('portal_posted_date').notNull(),
   companyListingUrl: text('company_listing_url').notNull(),
   portalUpdatedTime: text('portal_updated_time').notNull(),
-  createdAt: text('created_at').notNull().default(sql`(CURRENT_TIME)`),
-  updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIME)`),
+  createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   archived: integer({ mode: 'boolean' }).notNull().default(false),
   companyId: integer('company_id').references(() => companies.id),
 }, (table) => {
@@ -29,8 +29,8 @@ export const jobs = sqliteTable("jobs", {
 export const companies = sqliteTable("companies", {
   id: integer().primaryKey({ autoIncrement: true }),
   name: text().notNull(),
-  createdAt: text('created_at').notNull().default(sql`(CURRENT_TIME)`),
-  updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIME)`),
+  createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
   homepageUrl: text('homepage_url').notNull(),
   logo: text().notNull(),
 }, (table) => {

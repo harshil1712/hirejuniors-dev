@@ -2,7 +2,8 @@ import { WorkflowEntrypoint, WorkflowStep, type WorkflowEvent } from 'cloudflare
 import { drizzle } from 'drizzle-orm/d1';
 import { z } from 'zod';
 import * as schema from "../../database/schema";
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
+import { getCountryCode } from 'utils/countryCode';
 
 const jobResponseSchema = z.array(z.object({
 	id: z.string(),
@@ -88,22 +89,27 @@ export class AmazonWorkflow extends WorkflowEntrypoint<Env> {
 
 			// console.log('AI Filtered Jobs:', aiFilteredJobs.response);
 		})
+
 		const ingestJobs = await step.do('ingest jobs into database', async () => {
 			console.log('Step 3 - Ingesting Jobs');
 			const db = drizzle(this.env.DB);
+			// Get company ID
+			const company = await db.select().from(schema.companies).where(eq(schema.companies.name, 'Amazon'));
+			const companyId = company[0].id;
+
 			// Map the jobs to the schema
 			const jobs = refineJobs.map((job: typeof jobResponseSchema._type[0]) => {
 				const j = {
 					listingId: job.id,
 					title: job.title,
 					city: job.city,
-					countryCode: job.country_code,
+					countryCode: getCountryCode(job.country_code),
 					description: job.description_short,
 					jobType: job.job_schedule_type,
 					portalPostedDate: job.posted_date,
 					companyListingUrl: `https://amazon.jobs${job.job_path}`,
 					portalUpdatedTime: job.updated_time,
-					companyId: 1,
+					companyId,
 				}
 				schema.insertJob.parse(j);
 				return j;

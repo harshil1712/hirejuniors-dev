@@ -1,9 +1,11 @@
 import { createRequestHandler } from "react-router";
 import { getLoadContext } from "load-context.js";
 import { AmazonWorkflow } from "./workflows/amazon";
+import { CloudflareWorkflow } from "./workflows/cloudflare";
 
 export {
-  AmazonWorkflow
+  AmazonWorkflow,
+  CloudflareWorkflow,
 }
 
 const handleRequest = createRequestHandler(() =>
@@ -47,5 +49,6 @@ export default {
     console.log("Scheduled event:", event);
     const id = Date.now().toString();
     ctx.waitUntil(env.AMAZON.create({ id }))
+    ctx.waitUntil(env.CLOUDFLAREJOBS.create({ id }))
   }
 } satisfies ExportedHandler<Env>;

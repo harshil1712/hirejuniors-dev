@@ -4,9 +4,9 @@
 	"type": "module",
 	"scripts": {
 		"build": "react-router build",
-		"db:generate": "dotenv -- drizzle-kit generate",
+		"db:generate": "drizzle-kit generate",
 		"db:migrate": "wrangler d1 migrations apply --local DB",
-		"db:migrate-production": "dotenv -- drizzle-kit migrate",
+		"db:migrate-production": "drizzle-kit migrate",
 		"dev": "react-router dev",
 		"start": "wrangler dev --test-scheduled",
 		"typecheck": "wrangler types && react-router typegen && tsc",
@@ -40,9 +40,9 @@
 		"@types/react-dom": "^19.0.1",
 		"autoprefixer": "^10.4.20",
 		"drizzle-kit": "~0.28.1",
-		"typescript": "^5.7.2",
 		"postcss": "^8.4.49",
 		"tailwindcss": "^3.4.16",
+		"typescript": "^5.7.2",
 		"vite": "^6.1.0",
 		"vite-tsconfig-paths": "^5.1.4",
 		"wrangler": "^3.108.1"
