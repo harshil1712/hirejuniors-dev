@@ -7,8 +7,8 @@ upload_source_maps = true
 
 [[d1_databases]]
 binding = "DB"
-database_name = "your-database-name"
-database_id = "your-database-id"
+database_name = "hirejuniors-db"
+database_id = "0cf03998-30a5-4a7f-a496-42ea5051a36c"
 migrations_dir = "drizzle"
 
 # [ai]
