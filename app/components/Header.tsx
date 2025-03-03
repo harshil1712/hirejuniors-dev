@@ -11,15 +11,15 @@ export default function Header() {
             </a>
           </div>
           <nav className="hidden md:flex space-x-10">
-            <a href="#" className="text-base font-medium text-gray-300 hover:text-white">
+            <a href="/" className="text-base font-medium text-gray-300 hover:text-white">
               Find Jobs
             </a>
             <a href="#" className="text-base font-medium text-gray-300 hover:text-white">
               Companies
             </a>
-            <a href="#" className="text-base font-medium text-gray-300 hover:text-white">
+            {/* <a href="#" className="text-base font-medium text-gray-300 hover:text-white">
               Resources
-            </a>
+            </a> */}
           </nav>
           <div className="hidden md:flex items-center justify-end md:flex-1 lg:w-0">
             {/* <Button variant="ghost" className="text-gray-300 hover:text-white">
