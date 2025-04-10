@@ -6,4 +6,5 @@ export default {
   ssr: true,
   // Required to use Workerd for the dev server
   buildDirectory: "dist",
+  future: { unstable_viteEnvironmentApi: true },
 } satisfies Config;
