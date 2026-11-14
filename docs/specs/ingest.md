@@ -1,150 +1,435 @@
 # Job ingest — spec
 
-Company-agnostic pipeline that fetches junior/intern/graduate roles from public
-job-board APIs, keeps them fresh, and retires listings that disappear. Runs
-weekly as one Cloudflare Workflow in `apps/jobs`.
+Company-agnostic pipeline that discovers company job boards, fetches their
+roles, classifies them with Workers AI decision/extraction models, keeps them
+fresh, and retires listings that close. Runs weekly as one Cloudflare
+Workflow in `apps/jobs`.
 
 ## Principles
 
 - **No company-specific code.** Code knows _platforms_ (Greenhouse, Lever,
   Ashby, Amazon Jobs); companies and their boards are rows in `source`.
-  Adding a company = adding a row (dashboard, later phase).
+  Discovery creates those rows automatically; the dashboard can add them too.
 - **Never delete.** Retiring sets `status = 'retired'` + `retired_at` +
   `retire_reason`. A job that reappears in its feed is reactivated unless it
   was retired `manual`ly (manual is sticky).
 - **A failed fetch never retires anything.** Feed-diff only runs for a source
-  whose fetch + parse fully succeeded.
+  whose fetch + parse fully succeeded and passed the shrink guard.
+- **Models decide, code verifies.** Every model answer is gated by an explicit
+  probability threshold and sanity checks in code; anything below threshold
+  goes to human review, never straight to the public board.
+- **AI is optional at the edges.** Clairic (preview) fields are all nullable;
+  if Clairic fails, jobs still publish without them. If Clef is unavailable,
+  jobs stay `pending` and are retried next run — never published unclassified.
 
 ## Layout
 
 - `packages/db` (`@hirejuniors/db`) — Drizzle schema for `company`, `source`,
-  `job`, `ingest_run`, `source_run` + relations, shared query helpers, and the
-  single D1 migrations dir `packages/db/migrations` (moved from
-  `apps/web/migrations`; auth tables included). Auth schema stays generated in
-  `apps/web/src/auth-schema.ts`.
+  `job`, `ingest_run`, `source_run`, `discovery_candidate`,
+  `discovery_cursor` + relations, shared query helpers, and the single D1
+  migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — Worker exporting `IngestWorkflow`;
-  `src/platforms/*` adapters, `src/classify.ts`, `src/location.ts`,
-  `src/ingest.ts` (per-source upsert + feed diff), `src/retire.ts` (expiry +
-  link check). The Workflow class is thin glue over these functions.
+  `src/platforms/*` adapters, `src/classify.ts` (keyword pre-filter +
+  model classification), `src/extract.ts` (Clairic), `src/discover.ts`,
+  `src/location.ts`, `src/ingest.ts` (per-source upsert + feed diff),
+  `src/retire.ts` (expiry + link/page check), `src/ai.ts` (typed wrappers
+  over the AI binding). The Workflow class is thin glue over these functions.
 
-## Schema (`packages/db`, migration `0004_jobs.sql`)
+## Schema (`packages/db`)
 
-Conventions as in the starter: text ids `<prefix>_` + nanoid(16), timestamps
-`integer` `timestamp_ms`, snake_case columns.
+Nothing has been deployed yet, so these changes are made **in place** in
+`0004_jobs.sql` (and the seed in `0005_seed_sources.sql`), not as a new
+migration. Conventions as in the starter: text ids `<prefix>_` + nanoid(16),
+timestamps `integer` `timestamp_ms`, snake_case columns.
 
 `company` — `id` (`cmp_`), `slug` unique, `name`, `homepage_url` null,
 `logo_url` null, `created_at`, `updated_at`.
 
 `source` — `id` (`src_`), `company_id` → company (cascade), `platform` enum
-`greenhouse | lever | ashby | amazon_jobs`, `board` text (Greenhouse board
-token / Lever site / Ashby board name / Amazon: `"amazon"`), `config` text
-JSON (validated per platform with zod; see adapters), `include_all` boolean
-default false (skip the level classifier — for boards that are already
-early-career only), `enabled` boolean default true, `last_run_at` null,
-`last_status` enum `succeeded | failed` null, `last_error` null, `created_at`,
-`updated_at`. Unique `(platform, board)`.
+`greenhouse | lever | ashby | amazon_jobs`, `board` text, `config` text JSON
+(validated per platform with zod), `include_all` boolean default false (board
+is already early-career only — skip the level decision), `enabled` boolean
+default true, **`origin` enum `seed | manual | discovered` default `manual`**,
+**`trial` boolean default false** (discovered and not yet proven to have
+junior roles), **`disabled_reason` enum `no_junior_roles | manual` null**,
+**`last_fetched` integer null** (listing count of the last successful fetch,
+for the shrink guard), `last_run_at` null, `last_status` enum
+`succeeded | failed` null, `last_error` null, `created_at`, `updated_at`.
+Unique `(platform, board)`.
 
-`job` — `id` (`job_`), `source_id` → source (cascade), `company_id` →
-company, `external_id`, `slug` unique (set on insert, never regenerated),
-`title`, `level` enum `internship | apprenticeship | graduate | junior`,
-`employment_type` null (schema.org: `FULL_TIME | PART_TIME | INTERN |
-CONTRACTOR | TEMPORARY | OTHER`), `workplace` enum `onsite | hybrid | remote`
-null, `location_raw`, `city` null, `region` null, `country_code` null
-(ISO 3166-1 alpha-2, upper case), `description_html` null (raw from source,
-entity-decoded; sanitised at render time), `description_text` (plain text,
-≤ 500 chars, for cards/meta), `apply_url`, `posted_at` null, `source_updated_at`
-null, `valid_through` null, `status` enum `active | retired` default active,
-`retired_at` null, `retire_reason` enum `missing_from_feed | link_dead |
-expired | manual` null, `missed_runs` integer default 0, `first_seen_at`,
-`last_seen_at`, `last_checked_at` null, `created_at`, `updated_at`.
-Unique `(source_id, external_id)`. Indexes: `(status, posted_at DESC)`,
-`(status, country_code)`, `(status, level)`, `(company_id, status)`.
+`job` — as before, with these changes:
 
-`ingest_run` — `id` (`run_`), `trigger` enum `schedule | manual`,
-`workflow_instance_id`, `status` enum `running | succeeded | partial | failed`,
-`started_at`, `finished_at` null, totals `fetched, inserted, updated,
-reactivated, retired` integers default 0, `error` null.
+- `status` enum **`pending | active | review | rejected | retired`** default
+  `pending`. Only `active` is public. `pending` = awaiting classification;
+  `review` = model unsure, waiting for the admin; `rejected` = classified as
+  not early-career or not tech (kept so it isn't re-classified every week).
+- `level` becomes **nullable** (null while pending/rejected).
+- `retire_reason` enum adds **`closed_page`**.
+- New: `content_hash` text not null (see §Change detection),
+  `classified_at` null, `classified_by` enum `rules | clef-flash | clef |
+  admin` null, `classifier_confidence` real null, `reject_reason` enum
+  `not_early_career | not_tech | experience | admin` null, `review_reason`
+  text null, `min_years_experience` integer null, `salary_min` integer null,
+  `salary_max` integer null, `salary_currency` text null (ISO 4217),
+  `salary_period` enum `HOUR | WEEK | MONTH | YEAR` null, `graduation_year`
+  integer null, `extracted_at` null.
+- Index `(status, classified_at)` added for the classify queue.
 
-`source_run` — `id` (`srn_`), `run_id` → ingest_run (cascade), `source_id` →
-source (cascade), `status` enum `succeeded | failed`, `fetched, kept,
-inserted, updated, reactivated, retired` integers, `error` null,
-`started_at`, `finished_at`.
+`ingest_run` — add totals `classified, rejected, review, discovered`
+integers default 0 and `ai_input_tokens` integer default 0.
 
-Seed migration `0005_seed_sources.sql` (`INSERT OR IGNORE`, fixed ids):
-companies Cloudflare (`cloudflare`, https://www.cloudflare.com) and Amazon
-(`amazon`, https://www.amazon.jobs); sources Cloudflare/greenhouse board
-`cloudflare` config `{"departmentIds":[70480]}` include_all true, and
-Amazon/amazon_jobs board `amazon` config = the student-programs search used
-today (`git show main:workers/workflows/amazon.ts`) include_all true.
+`discovery_candidate` (new) — `id` (`dsc_`), `origin` enum `manual | crawl`,
+`input` text (manual: bare domain like `stripe.com`; crawl:
+`<platform>:<board>`), `status` enum `queued | found | not_found | duplicate |
+failed` default `queued`, `platform` null, `board` null, `source_id` →
+source null (set null), `error` null, `attempts` integer default 0,
+`created_at`, `updated_at`. Unique `(input)`.
+
+`discovery_cursor` (new) — `id` text pk = `<crawl-id>:<host>` (e.g.
+`CC-MAIN-2026-43:jobs.lever.co`), `next_page` integer default 0,
+`num_pages` integer null, `done` boolean default false, `updated_at`.
+
+Seed (`0005`): the two existing sources get `origin = 'seed'`.
 
 ## Adapters (`apps/jobs/src/platforms`)
 
-Each platform exports `parseConfig(json)` (zod) and
-`fetchListings(fetcher, source) → Promise<RawListing[]>` plus a pure
-`toListings(payload, source)` used by tests. `fetcher` is a `typeof fetch`
-argument (test seam — no module mocking). `RawListing`: `externalId, title,
-applyUrl, locationRaw, employmentTypeHint, workplaceHint, countryHint,
-descriptionHtml, postedAt, updatedAt`.
+Unchanged contract: `parseConfig(json)`, `fetchListings(fetcher, source)`,
+pure `toListings(payload, source)`. Add to each of greenhouse/lever/ashby a
+**`probe(fetcher, board) → { ok: true, companyName?: string } | { ok: false }`**
+used by discovery: one GET of the same endpoint `fetchListings` uses (without
+`content=true` for Greenhouse); `ok` = HTTP 200 and the payload zod-parses.
+Greenhouse `companyName` comes from `GET /v1/boards/{board}` → `name`; others
+leave it undefined (company name falls back to title-cased board).
 
-- **greenhouse** — `GET https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true`,
-  or per `config.departmentIds` `.../departments/{id}?content=true` (dedupe by id).
-  `content` is HTML-entity-escaped → decode.
-- **lever** — `GET https://api.lever.co/v0/postings/{board}?mode=json`;
-  `categories.commitment/location`, `workplaceType`, `country`, `createdAt` ms.
-- **ashby** — `GET https://api.ashbyhq.com/posting-api/job-board/{board}`;
-  `employmentType`, `isRemote`/`workplaceType`, `address.postalAddress.addressCountry`, `publishedAt`.
-- **amazon_jobs** — `GET https://www.amazon.jobs/en/search.json?<config.query>`;
-  port fields from the old workflow (`job_path` → `https://www.amazon.jobs{job_path}`).
+## Discovery (`discover.ts`)
 
-All responses are zod-parsed; a parse failure fails the source (no feed-diff).
+Two inputs, one pipeline. Both end in `probe` → create company + source.
+
+**Manual (domains).** The dashboard accepts a pasted list of domains (one per
+line, normalised to lower-case bare host, deduped) → `discovery_candidate`
+rows with `origin = 'manual'`. For each queued manual candidate:
+
+1. Fetch, in order, stopping at the first that yields an ATS link:
+   `https://{d}/careers`, `https://{d}/jobs`, `https://careers.{d}`,
+   `https://{d}` (GET, `redirect: "follow"`, 10 s timeout, first 512 KB).
+2. Scan the HTML with these patterns (first match wins, in this order):
+   - Greenhouse: `(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board\?for=)?([A-Za-z0-9_-]+)`
+   - Lever: `jobs\.lever\.co/([A-Za-z0-9_.-]+)`
+   - Ashby: `jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)`
+   Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
+3. If no link is found, guess `board = first label of d` (e.g. `stripe` from
+   `stripe.com`) and probe Greenhouse, Lever, Ashby in that order.
+4. First successful `probe` → `found`. None → `not_found`. Network errors on
+   every attempt → `failed` (retried next run while `attempts < 3`).
+
+**Crawl (Common Crawl index).** Best-effort, never fails the run. Hosts:
+`boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`,
+`jobs.ashbyhq.com`. Use the newest collection from
+`https://index.commoncrawl.org/collinfo.json`. Per host, query
+`{cdx-api}?url={host}/*&output=json&fl=url&page={n}` (first call with
+`showNumPages=true` stores `num_pages`), resuming from `discovery_cursor`.
+Process at most **2 pages per host per run**. From each URL take the first
+path segment as the board (same ignore list as above, must match
+`^[A-Za-z0-9_.-]+$`), dedupe, and insert `discovery_candidate` rows
+`origin = 'crawl'`, `input = '<platform>:<board>'`, `INSERT OR IGNORE`.
+When a newer collection appears, start new cursors for it. The index
+returned 504s during design (2026-11-15), so every crawl call is wrapped:
+on error, log + record nothing + move on; the cursor is not advanced.
+
+Crawl candidates skip steps 1–3 and go straight to `probe`.
+
+**Creating the source.** On `found`: if `(platform, board)` already exists
+→ candidate `duplicate` with `source_id` = existing. Otherwise insert
+`company` (name = probe `companyName` ?? title-cased board with `-`/`_` →
+space; slug = slugify(name), append `-2`, `-3`… on collision;
+`homepage_url = https://{d}` for manual, null for crawl) and `source`
+(`origin = 'discovered'`, `enabled = true`, `trial = true`,
+`include_all = false`, `config = '{}'`).
+
+**Per-run caps.** Probe at most **150 candidates per run** (manual first,
+oldest first). Steps of 15 candidates each (`discover:<n>`).
+
+**Trial evaluation (auto-enable).** After classification, for every source
+with `trial = true` that ingested successfully this run: if it has ≥1 job in
+`active` or `review` → `trial = false` (kept). If it still has `pending`
+jobs (classify cap reached) → leave it in trial for the next run. Otherwise → `enabled = false`,
+`trial = false`, `disabled_reason = 'no_junior_roles'`. Sources disabled for
+`no_junior_roles` are re-tried (treated as enabled, `trial = true`) when
+`last_run_at` is older than **28 days**. `manual` disables are never retried.
+
+## Change detection
+
+`content_hash = sha256hex(title + "\n" + location_raw + "\n" +
+htmlToText(description_html))` computed at upsert. On update, if the hash is
+unchanged the classification/extraction columns are left alone. If it
+changed, the job is queued for re-classification (unless `retired`
+`manual`, or `rejected`/`active` by `admin` — admin decisions are sticky):
+`pending`/`review`/`rejected` rows go to `pending`; an **`active` row stays
+`active`** (no public flicker) with `classified_at = null`, and the classify
+queue selects `status IN ('pending') OR (status = 'active' AND
+classified_at IS NULL)`. Re-classification may then move it to
+`rejected`/`review`. Jobs of `include_all` sources in that queue are
+re-classified by rules (§2), never by Clef. In all cases
+`description_html` is refreshed.
 
 ## Classification (`classify.ts`)
 
-`classifyLevel(title, employmentTypeHint) → level | null`, case-insensitive,
-word-boundary matches. Exclusions win: senior, sr, staff, principal, lead,
-manager, director, head of, vp, chief. Then: intern, internship, co-op,
-working student, placement → `internship`; apprentice(ship) → `apprenticeship`;
-graduate, new grad, university grad, early career, campus, entry level,
-entry-level → `graduate`; junior, jr → `junior`. Employment type `INTERN` with
-no title match → `internship`. `null` = not stored. With `include_all` the
-classifier still runs for `level`; unmatched defaults to `graduate` and
-exclusions still drop the job.
+**1. Keyword pre-filter (no model).** `isExcluded(title)` as today
+(senior, sr, staff, principal, lead, manager, director, head of, vp, chief —
+word-boundary, case-insensitive) → listing is dropped, never stored. Exception
+so "Sales Lead Intern"-style titles survive: if the title also matches the
+internship/apprenticeship/graduate patterns, don't drop it. Everything else
+is stored as `pending`.
 
-`location.ts` — split `location_raw` on `,`/`|`/`;`, detect remote/hybrid
-keywords, map the last segment (or `countryHint`) to ISO alpha-2 using the
-table from `git show main:utils/countryCode.ts` (+ alpha-2/alpha-3 passthrough).
+**2. `include_all` sources.** Level = `classifyLevel(title)` ?? `graduate`,
+status `active`, `classified_by = 'rules'`. No Clef call. (Clairic still runs.)
+
+**3. Model decision.** For pending jobs: step `classify:<n>` takes **20
+pending jobs** (oldest first). Per job, call `@cf/cloudflare/clef-flash`
+with `model: "clef-flash"`, `state` = the text below, and `questions`
+exactly:
+
+State:
+
+```
+Title: {title}
+Company: {company.name}
+Location: {location_raw}
+Employment type: {employment_type ?? "unknown"}
+
+{htmlToText(description_html) truncated to 6000 characters}
+```
+
+Questions:
+
+```json
+{
+  "level": {
+    "type": "choice",
+    "instructions": "What seniority is this job aimed at?",
+    "criteria": {
+      "internship": "Internship, co-op, working student or placement for students",
+      "apprenticeship": "Apprenticeship with on-the-job training",
+      "graduate": "Graduate scheme, new-grad or entry-level role for recent graduates",
+      "junior": "Junior role open to people with roughly 0-2 years of experience",
+      "not_early_career": "Requires more than about 2 years of experience, or is mid-level, senior or leadership"
+    }
+  },
+  "is_tech": {
+    "type": "noul",
+    "instructions": "Is this a technology role, such as software, data, machine learning, infrastructure, security, IT, QA, hardware, technical product or technical design?"
+  },
+  "workplace": {
+    "type": "choice",
+    "instructions": "Where is the work done?",
+    "criteria": {
+      "onsite": "At the employer's office or site",
+      "hybrid": "Split between office and home",
+      "remote": "Fully remote",
+      "unclear": "The posting does not say"
+    }
+  },
+  "salary_currency": {
+    "type": "choice",
+    "instructions": "In which currency is pay stated?",
+    "criteria": {
+      "USD": "US dollars", "EUR": "Euros", "GBP": "British pounds",
+      "CAD": "Canadian dollars", "AUD": "Australian dollars", "INR": "Indian rupees",
+      "SGD": "Singapore dollars", "other": "Another currency", "none": "Pay is not stated"
+    }
+  },
+  "salary_period": {
+    "type": "choice",
+    "instructions": "What period does the stated pay cover?",
+    "criteria": {
+      "YEAR": "Per year", "MONTH": "Per month", "WEEK": "Per week",
+      "HOUR": "Per hour", "none": "Pay is not stated"
+    }
+  }
+}
+```
+
+Let `pLevel = probabilities[level.choice]`, `pTech = is_tech.noul`.
+
+- **Accept** when `pLevel ≥ 0.80` and (`pTech ≥ 0.80` or `pTech ≤ 0.20`).
+- Otherwise **escalate**: repeat the identical call on `@cf/cloudflare/clef`
+  (`model: "clef"`). Accept when `pLevel ≥ 0.70` and (`pTech ≥ 0.70` or
+  `pTech ≤ 0.30`).
+- Still not accepted → status `review`, `level` = best guess unless it is
+  `not_early_career`, `review_reason` = `"level p=0.62, tech p=0.55"` style
+  string, `classified_by` = the last model used.
+
+On accept: `level.choice = not_early_career` → `rejected` /
+`not_early_career`; else `pTech < 0.5` → `rejected` / `not_tech`; else
+`active` with `level`. Store `classifier_confidence = min(pLevel,
+max(pTech, 1 − pTech))`, `classified_by`, `classified_at`. `workplace`: only
+fill when the column is null, the answer isn't `unclear` and its probability
+≥ 0.70. `salary_currency`/`salary_period`: keep in step-local memory for
+extraction; persist only via §Extraction rules. Rejected jobs get
+`description_html = null` to save space.
+
+A Clef error (binding throws / non-2xx) throws the step → Workflow retries
+(3, exponential); after retries the job stays `pending` and the run moves
+on. The classify loop stops after **25 steps** (500 jobs) per run; the rest
+wait for the next run.
+
+## Extraction (`extract.ts`)
+
+For each job that became `active` or `review` in a classify step, in the
+same step, call `@cf/cloudflare/clairic` (`model: "clairic"`,
+`reference_date` = posted_at ?? first_seen_at as `YYYY-MM-DD`, same `state`)
+with `fields` exactly:
+
+```json
+{
+  "min_years_experience": {
+    "type": "number", "decimals": 0,
+    "instructions": "Minimum years of professional work experience required. Null if not stated."
+  },
+  "salary_min": {
+    "type": "number", "decimals": 0,
+    "instructions": "Lowest stated pay amount for this role, as a plain number. Null if pay is not stated."
+  },
+  "salary_max": {
+    "type": "number", "decimals": 0,
+    "instructions": "Highest stated pay amount for this role, as a plain number. Same as the lowest if only one amount is given. Null if pay is not stated."
+  },
+  "application_deadline": {
+    "type": "date",
+    "instructions": "Last date applications are accepted. Null if not stated."
+  },
+  "graduation_year": {
+    "type": "number", "decimals": 0,
+    "instructions": "Year candidates are expected to graduate. Null if not stated."
+  }
+}
+```
+
+Use a value only when it is non-null and its `confidence ≥ 0.80`, then apply
+these checks (failing values are dropped, not the job):
+
+- `min_years_experience` ∈ [0, 15]. If ≥ **3** → job becomes `rejected` /
+  `experience` (overrides the decision step).
+- Salary: persist `salary_min`, `salary_max`, `salary_currency`,
+  `salary_period` only if min and max are present, `0 < min ≤ max`,
+  `max ≤ 20 × min`, currency ∉ {`other`, `none`} with probability ≥ 0.70,
+  and period ≠ `none` with probability ≥ 0.70. Otherwise all four null.
+- `application_deadline`: must be after `posted_at ?? first_seen_at` and
+  within 365 days of it → set `valid_through` only if it is null.
+- `graduation_year` ∈ [current year − 1, current year + 4].
+
+Set `extracted_at`. Any Clairic error → log, leave fields null, continue
+(never throws the step). Tokens from every model call are summed into
+`ingest_run.ai_input_tokens` via the step's returned counts.
+
+## Feed diff and retirement
+
+**Shrink guard** (in `ingestSource`, before upsert): if `last_fetched ≥ 10`
+and this fetch returned fewer than 20 % of `last_fetched` listings, or
+returned 0 while the source has ≥ 1 `active` job → throw
+`"feed shrank from X to Y"` (treated as a failed fetch: no diff). On success
+set `last_fetched`.
+
+**Missing from feed: 1 miss.** Jobs of the source in `active` or `review`
+not seen in a successful fetch are retired `missing_from_feed` immediately
+(`missed_runs` is kept as a counter but the threshold is now 1). `pending`
+and `rejected` jobs not seen are set `retired` / `missing_from_feed` too, so
+they leave the queue.
+
+**Expire** — unchanged: `valid_through < now`, or
+`coalesce(posted_at, first_seen_at) < now − 90 days` → `expired`.
+
+**Link + page check** — up to 400 `active` jobs selected once (nulls first by
+`last_checked_at`), slices of 40 per step:
+
+1. GET `apply_url` with `redirect: "manual"`, follow at most 3 redirects
+   manually (resolving relative `Location`), 10 s timeout per hop.
+2. 404 or 410 at any hop → retire `link_dead`.
+3. Final 2xx with `text/html` → `htmlToText(body)` first 6000 chars. If the
+   text is **< 200 characters** (JS-rendered page), just stamp
+   `last_checked_at`. Otherwise call `clef-flash` with that text as `state`
+   and one question:
+
+   ```json
+   {
+     "open": {
+       "type": "noul",
+       "instructions": "Is this page a specific job posting that is still open and accepting applications? Answer no for careers home pages, search pages, 'job not found' or 'no longer accepting applications' pages."
+     }
+   }
+   ```
+
+   `open.noul ≤ 0.15` → retire `closed_page`; else stamp `last_checked_at`.
+4. Any other status / network error / model error → stamp (status) or leave
+   untouched (errors), as today.
+
+**Page-check circuit breaker:** if a link-check slice would retire more than
+**25 %** of its jobs as `closed_page`, apply none of that slice's
+`closed_page` retirements and record the slice in `ingest_run.error`
+(`"closed_page breaker tripped on slice n"`). `link_dead` is unaffected.
 
 ## Workflow (`IngestWorkflow`)
 
-Schedule: `0 6 * * 1` (Mondays 06:00 UTC) via Alchemy's Workflow `schedules`.
-Params `{ trigger: "schedule" | "manual" }`.
+Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 
-1. `start` — insert `ingest_run` (running).
-2. `load sources` — enabled sources (ids only).
-3. Per source, step `ingest:<sourceId>` (retries: 3, exponential): fetch →
-   parse → classify → upsert by `(source_id, external_id)` (insert sets slug,
-   `first_seen_at`; update refreshes fields, `last_seen_at`, `missed_runs = 0`,
-   reactivates `missing_from_feed`/`expired`/`link_dead` retirees, never
-   `manual`) → feed diff: active jobs of this source not seen this run get
-   `missed_runs + 1`; those reaching **2** are retired `missing_from_feed`.
-   Writes in `db.batch` chunks sized under D1's 100 bound-parameter limit.
-   Returns counts only (keep step output small). Step failure after retries is
-   caught: record `source_run` failed + `source.last_status/last_error`, continue.
-4. `expire` — retire active jobs with `valid_through < now`, or
-   `coalesce(posted_at, first_seen_at) < now − 90 days` → `expired`.
-5. `linkcheck:<n>` for n = 1..10 — 40 active jobs per step ordered by
-   `last_checked_at` nulls first; `GET apply_url` with `redirect: "manual"`;
-   404/410 → retire `link_dead`; any other response → set `last_checked_at`;
-   network error/timeout (10 s) → leave untouched.
-6. `finish` — totals, status `succeeded` / `partial` (some source failed) /
-   `failed`.
+1. `start` — insert `ingest_run`.
+2. `discover:crawl:<host>` — one step per host, best-effort (caught).
+3. `discover:<n>` — probe queued candidates (≤ 10 steps × 15).
+4. `load sources` — enabled sources + `no_junior_roles` sources due for retry.
+5. `ingest:<sourceId>` — per source (retries 3): fetch → shrink guard →
+   pre-filter → upsert (new/changed → `pending`) → feed diff.
+6. `classify:<n>` — ≤ 25 steps × 20 pending jobs: decision + extraction.
+7. `trial` — trial evaluation for sources ingested this run.
+8. `expire`.
+9. `linkcheck:select`, `linkcheck:<n>` — link + page check, breaker.
+10. `finish` — totals (incl. `classified`, `rejected`, `review`,
+    `discovered`, `ai_input_tokens`), status `succeeded` / `partial` /
+    `failed`.
 
-Slug: `slugify(title)-{company.slug}-{6-char base36 hash of source_id:external_id}`.
+Step outputs stay small (counts/ids only). Default limit is 10,000 steps per
+instance (Workers Paid); the caps above keep a run well under 1,000.
+
+The AI binding is passed into `classify.ts`/`extract.ts`/`retire.ts` as an
+argument typed by a small interface in `ai.ts` (`decide(model, state,
+questions)`, `extract(state, fields, referenceDate)`) — the test seam, like
+`fetcher`. Tests pass a hand-written fake; no module mocking.
+
+## Dashboard / API / MCP (`apps/web`)
+
+- **Discovery page** (`/discovery`): textarea to paste domains → creates
+  manual candidates; table of candidates (input, origin, status, platform,
+  board, linked source, error), filter by status. Service + session route
+  `POST /api/discovery` (body `{ domains: string[] }`, max 500, each a valid
+  hostname) and `GET /api/discovery`; mirrored in `/api/v1` and MCP
+  (`discovery_add`, `discovery_list`). Admin-only like the rest.
+- **Jobs page**: status filter gains `pending | review | rejected`; default
+  stays `active`. Job detail shows `classified_by`, confidence,
+  `review_reason`/`reject_reason`, and the extracted fields. Actions:
+  **Approve** (review/rejected → active, needs a level picked, sets
+  `classified_by = 'admin'`) and **Reject** (→ rejected / `admin`). Admin
+  decisions are sticky across content changes. API/MCP: `jobs_approve`,
+  `jobs_reject`.
+- **Sources page**: show `origin`, `trial`, `disabled_reason`.
+- **Runs page**: show the new totals including `ai_input_tokens`.
+
+## Site (`apps/site`)
+
+- Only `active` jobs are public (already true — re-check queries handle the
+  new statuses).
+- `JobPosting.baseSalary` when salary fields are present:
+  `{ "@type": "MonetaryAmount", currency, value: { "@type":
+  "QuantitativeValue", minValue, maxValue, unitText: salary_period } }`.
+- Job page stub: show salary (formatted with `Intl.NumberFormat`, currency,
+  "/ year" etc.) and "Grad year" when present.
 
 ## Infra (`alchemy.run.ts`)
 
-`Cloudflare.Worker("hirejuniors-jobs", …)` with `rootDir`/`main` in
-`apps/jobs`, same `DB`, `IngestWorkflow` binding with the schedule,
-observability as the web worker, no domain. **Not created when `PR_NAME` is
-set** (Alchemy rejects Workflow classes on preview versions). D1 migrations
-path → `./packages/db/migrations`.
+Add `AI: Cloudflare.Workers.AI()` to the jobs worker `env`. No other infra.
+Jobs worker still not created when `PR_NAME` is set.
+
+## Cost envelope
+
+Pricing (2026-11): clef-flash $0.038, clef $0.24, clairic $0.10 per M input
+tokens; no output-token charge. At ~1.5k tokens per job and 2,000
+new/changed jobs a week, expect well under $1/week. `ai_input_tokens` on
+each run is the check.
