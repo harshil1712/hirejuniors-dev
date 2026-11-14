@@ -121,6 +121,7 @@ const jobCard = {
   region: job.region,
   countryCode: job.countryCode,
   postedAt: job.postedAt,
+  applyUrl: job.applyUrl,
   firstSeenAt: job.firstSeenAt,
   companyId: job.companyId,
   companyName: company.name,

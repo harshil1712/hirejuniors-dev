@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@hirejuniors/brand/tokens.css";
-@import "@hirejuniors/brand/crew/crew.css";
 
 .wrap {
   max-width: 1136px;
@@ -27,11 +26,8 @@ a {
   text-underline-offset: 3px;
 }
 
-/* browser surfaces carry the palette too */
-::selection {
-  background: var(--brand-tint);
-  color: var(--color-kumo-default);
-}
+/* browser surfaces carry the palette too — marker selection (tokens.css
+   already styles ::selection; keep caret/accent on brand ink) */
 :root {
   caret-color: var(--color-kumo-brand);
   accent-color: var(--color-kumo-brand);

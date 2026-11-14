@@ -1,5 +1,6 @@
 ---
 import { formatDate } from "../lib/format";
+import { levelLabelSingularLower, type Level } from "../lib/levels";
 
 interface Item {
   slug: string;
@@ -7,13 +8,16 @@ interface Item {
   companyName: string;
   level: string;
   locationRaw: string;
+  applyUrl?: string | null;
   postedAt: Date | null;
   firstSeenAt: Date;
 }
-const { jobs, empty = "No open roles here right now." } = Astro.props as {
+const { jobs, empty = "No open roles here right now.", as = "h2" } = Astro.props as {
   jobs: Item[];
   empty?: string;
+  as?: "h2" | "h3";
 };
+const T = as;
 ---
 {jobs.length === 0 ? (
   <p class="empty">{empty}</p>
@@ -21,40 +25,102 @@ const { jobs, empty = "No open roles here right now." } = Astro.props as {
   <ul class="joblist">
     {jobs.map((j) => (
       <li>
-        <a class="row" href={`/job/${j.slug}/`}>
-          <span class="t">{j.title}</span>
-          <span class="c">{j.companyName}</span>
-          <span class="meta">
-            {j.level}{j.locationRaw ? ` · ${j.locationRaw}` : ""}
-          </span>
-          <time class="d" datetime={(j.postedAt ?? j.firstSeenAt).toISOString().slice(0, 10)}>
-            {formatDate(j.postedAt ?? j.firstSeenAt)}
-          </time>
-        </a>
+        <article class="row">
+          <div class="main">
+            <T><a class="t" href={`/job/${j.slug}/`}>{j.title}</a></T>
+            <div class="meta">
+              <b>{j.companyName}</b>
+              {[
+                j.locationRaw,
+                levelLabelSingularLower(j.level as Level),
+              ]
+                .filter(Boolean)
+                .map((part) => <> · {part}</>)}
+              {" "}· posted{" "}
+              <time datetime={(j.postedAt ?? j.firstSeenAt).toISOString().slice(0, 10)}>
+                {formatDate(j.postedAt ?? j.firstSeenAt)}
+              </time>
+            </div>
+          </div>
+          {j.applyUrl && (
+            <a
+              class="tab"
+              href={j.applyUrl}
+              target="_blank"
+              rel="nofollow noopener"
+              aria-label={`Apply for ${j.title} at ${j.companyName} (opens company site)`}
+            >
+              <span>Apply ↗</span>
+            </a>
+          )}
+        </article>
       </li>
     ))}
   </ul>
 )}
 <style>
-  .joblist { list-style: none; margin: 0; padding: 0; }
+  .joblist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
   .row {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
-    gap: 12px;
-    align-items: baseline;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--color-kumo-line);
+    grid-template-columns: 1fr 64px;
+    background: var(--color-kumo-elevated);
+    border: 1px solid var(--color-kumo-line);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+  }
+  .row:hover, .row:focus-within { border-color: var(--color-kumo-default); }
+  .main { padding: 18px 20px; display: grid; gap: 7px; min-width: 0; }
+  h2, h3 { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+  .t { color: var(--color-kumo-default); text-decoration: none; border-radius: 4px; }
+  .t:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-kumo-subtle);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .meta b { color: var(--color-kumo-default); font-weight: 500; }
+  /* signature: perforated tear-off tab */
+  .tab {
+    position: relative;
+    display: grid;
+    place-items: center;
     text-decoration: none;
     color: var(--color-kumo-default);
-    border-radius: 6px;
+    background-image: radial-gradient(circle, var(--color-kumo-line) 1.6px, transparent 1.9px);
+    background-size: 2px 9px;
+    background-repeat: repeat-y;
+    background-position: left center;
+    transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
   }
-  .row:hover .t { color: var(--brand-text); }
-  .t { font-weight: 600; min-width: 0; }
-  .c { color: var(--color-kumo-subtle); min-width: 0; }
-  .meta { color: var(--color-kumo-subtle); font-size: 13px; min-width: 0; }
-  .d { color: var(--color-kumo-subtle); font-size: 13px; white-space: nowrap; }
+  .tab span {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+  .row:hover .tab, .row:focus-within .tab {
+    transform: translateX(3px) rotate(1.5deg);
+    transform-origin: left top;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row:hover .tab, .row:focus-within .tab { transform: none; }
+    .tab { transition: none; }
+  }
+  @media (max-width: 480px) {
+    .row { grid-template-columns: 1fr; }
+    .tab {
+      background-repeat: repeat-x;
+      background-position: center top;
+      background-size: 9px 2px;
+      padding: 10px 0;
+    }
+    .tab span { writing-mode: horizontal-tb; transform: none; }
+  }
   .empty { color: var(--color-kumo-subtle); padding: 24px 0; }
-  @media (max-width: 700px) {
-    .row { grid-template-columns: 1fr; gap: 2px; }
-  }
 </style>

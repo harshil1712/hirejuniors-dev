@@ -1,11 +1,10 @@
 @import "tailwindcss";
 @import "@cloudflare/kumo/styles/tailwind";
 @import "@hirejuniors/brand/tokens.css";
-@import "@hirejuniors/brand/crew/crew.css";
 @source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
-@source "../node_modules/@fontsource-variable/instrument-sans/files/*";
-@source "../node_modules/@fontsource/pixelify-sans/files/*";
-@source "../node_modules/@fontsource-variable/jetbrains-mono/files/*";
+@source "../node_modules/@fontsource-variable/schibsted-grotesk/files/*";
+@source "../node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/*";
+@source "../node_modules/@fontsource-variable/martian-mono/files/*";
 @source "../../../packages/brand/**/*.{ts,tsx}";
 
 /* ---------------------------------------------------------------------------
@@ -24,8 +23,9 @@
    - beat the inline style with author !important on the custom properties;
    - set `color` inside @layer base: an !important in an EARLIER layer beats
      Tailwind's `!text-white` (@layer utilities), unlike unlayered !important.
-   Result: light #fff on #c73d19 (5.11:1), hover #a9330f (6.63:1);
-           dark #121212 on #ff6b42 (6.63:1), hover #ff8a66 (8.10:1). */
+   Result (design A, ink brand): light #fff on #172036 (16.20:1), hover
+           #fff on #25345a (12.23:1); dark #0e1424 on #e9edf6 (15.65:1),
+           hover #0e1424 on #cdd6e6 (12.55:1). */
 :is(
   [data-kumo-component="Button"],
   [data-kumo-component="LinkButton"]
@@ -52,7 +52,7 @@
 }
 
 /* 1b. Destructive Button → same treatment with --color-kumo-danger.
-   Light #fff on #b91c1c (6.47:1); dark #121212 on #e5484d (4.98:1). */
+   Light #fff on #b3261e (6.54:1); dark #121212 on #ff8f88 (8.51:1). */
 :is(
   [data-kumo-component="Button"],
   [data-kumo-component="LinkButton"]
@@ -105,4 +105,15 @@
   .admin-scroll td:last-child::before {
     content: "";
   }
+}
+
+/* 4. Design A typography: all headings render in Schibsted Grotesk
+   (--font-display from tokens.css); mono utility stays Martian Mono. */
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }

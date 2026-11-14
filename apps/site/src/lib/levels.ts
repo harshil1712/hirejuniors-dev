@@ -32,3 +32,14 @@ export function levelLabelLower(level: Level): string {
     junior: "junior roles",
   }[level];
 }
+export function levelLabelSingular(level: Level): string {
+  return {
+    internship: "Internship",
+    apprenticeship: "Apprenticeship",
+    graduate: "Graduate",
+    junior: "Junior",
+  }[level];
+}
+export function levelLabelSingularLower(level: Level): string {
+  return levelLabelSingular(level).toLowerCase();
+}

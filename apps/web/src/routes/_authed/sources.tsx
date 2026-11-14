@@ -13,6 +13,7 @@ import {
   Switch,
   Table,
   Text,
+  Empty,
 } from "@cloudflare/kumo";
 import { Plus, WarningCircle } from "@phosphor-icons/react";
 import type {
@@ -32,7 +33,7 @@ import {
 import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
-import { CrewEmpty } from "../../components/crew-empty";
+
 import { FormError } from "../../components/form-error";
 
 export const Route = createFileRoute("/_authed/sources")({ component: Sources });
@@ -105,7 +106,7 @@ function Sources() {
           <Loader size="base" aria-label="Loading sources" />
         </div>
       ) : sources.length === 0 ? (
-        <CrewEmpty
+        <Empty
           title="No sources yet"
           description="Add a job board source and the next ingest run picks it up."
           contents={

@@ -1,13 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Banner, Button, Loader, Table, Text } from "@cloudflare/kumo";
+import { Badge, Banner, Button, Loader, Table, Text, Empty } from "@cloudflare/kumo";
 import { Play, WarningCircle } from "@phosphor-icons/react";
 import type { IngestRun } from "../../../worker/api/schemas";
 import { listRuns, triggerRun } from "../../lib/admin-api";
 import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
-import { CrewEmpty } from "../../components/crew-empty";
 
 export const Route = createFileRoute("/_authed/runs")({ component: Runs });
 
@@ -105,7 +104,7 @@ function Runs() {
           <Loader size="base" aria-label="Loading runs" />
         </div>
       ) : runs.length === 0 ? (
-        <CrewEmpty title="No runs yet" description="The weekly schedule and Run now land here." />
+        <Empty title="No runs yet" description="The weekly schedule and Run now land here." />
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-kumo-line">

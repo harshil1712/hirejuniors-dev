@@ -26,10 +26,9 @@ cd apps/web && npx kumo doc <Component>   # e.g. npx kumo doc Dialog
 
 - App shell, sidebar, theme toggle: `src/components/app-shell.tsx`, `theme-toggle.tsx` (theme via `lib/theme.ts`)
 - User menu: `components/user-menu.tsx`; page headers: `page-header.tsx`; settings blocks: `settings-section.tsx`
-- Shared: `confirm-dialog.tsx`, `form-error.tsx`, `auth-link.tsx`, `google-sign-in.tsx`, `password-input.tsx`, `crew-empty.tsx`, `status-badge.tsx`, `router-link.tsx`
+- Shared: `confirm-dialog.tsx`, `form-error.tsx`, `auth-link.tsx`, `google-sign-in.tsx`, `password-input.tsx`, `status-badge.tsx`, `router-link.tsx`
 - Auth screens (card layout, captcha slot, error display): `auth-card.tsx`, `src/routes/sign-in.tsx`; error copy via `lib/auth-errors.ts`, form state via `lib/use-captcha-form.ts`/`useDocumentTitle`
 - Admin users table + row actions: `src/routes/_authed/admin.tsx`
 - Settings forms (Field usage): `src/routes/_authed/settings.tsx`
-- CrewSprite (decorative pixel robot, decorative-only/aria-hidden): `src/components/crew.tsx` wrapping `@hirejuniors/brand` crew art — never for real content
 
 Check your diff against the hard rules before reporting — `dark:`, raw colors and non-Kumo components are violations to fix, not to copy.

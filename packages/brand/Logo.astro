@@ -1,15 +1,13 @@
 ---
-import { LOGO_VIEWBOX, LOGO_WORDMARK, logoRects } from "./logo-cells";
+// Design A wordmark/mark — same contract as Logo.tsx.
 interface Props { size?: number; wordmark?: boolean }
-const { size = 18, wordmark = false } = Astro.props;
-const { width: W, height: H } = LOGO_VIEWBOX;
-const svg = `<svg width="${size}" height="${size * (H / W)}" viewBox="0 0 ${W} ${H}" shape-rendering="crispEdges" aria-hidden="true" focusable="false">${logoRects()}</svg>`;
+const { size = 22, wordmark = false } = Astro.props;
 ---
 {wordmark ? (
-  <span style="display:inline-flex;align-items:center;gap:8px">
-    <Fragment set:html={svg}/>
-    <span class="font-display" style="font-weight:700;font-size:18px">{LOGO_WORDMARK}</span>
-  </span>
+  <span class="font-display" style={`font-weight:800;letter-spacing:-0.02em;font-size:${size}px;line-height:1`}>hire<span class="marker" style="margin-left:2px">juniors</span></span>
 ) : (
-  <Fragment set:html={svg}/>
+  <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <rect width="32" height="32" rx="7" fill="var(--marker)" />
+    <text x="16" y="22" text-anchor="middle" font-family="'Schibsted Grotesk Variable','Schibsted Grotesk',sans-serif" font-weight="800" font-size="17" letter-spacing="-0.5" fill="var(--marker-ink)">hj</text>
+  </svg>
 )}

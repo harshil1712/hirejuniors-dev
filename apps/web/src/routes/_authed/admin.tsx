@@ -9,6 +9,7 @@ import {
   Loader,
   Table,
   Text,
+  Empty,
 } from "@cloudflare/kumo";
 import {
   DotsThree,
@@ -25,7 +26,7 @@ import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
 import { ConfirmDialog } from "../../components/confirm-dialog";
-import { CrewEmpty } from "../../components/crew-empty";
+
 import { StatusBadge } from "../../components/status-badge";
 
 export const Route = createFileRoute("/_authed/admin")({
@@ -205,8 +206,7 @@ function Admin() {
           <Loader size="base" aria-label="Loading users" />
         </div>
       ) : users.length === 0 ? (
-        <CrewEmpty
-          robot={2}
+        <Empty
           title={search ? "No users match that search" : "No users yet"}
           description={
             search

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, Surface, Text } from "@cloudflare/kumo";
 import { Logo } from "@hirejuniors/brand/Logo.tsx";
-import { CrewSprite } from "@hirejuniors/brand/crew/CrewSprite";
 import { PRODUCT } from "../config";
 import { useDocumentTitle } from "../lib/use-document-title";
 
@@ -36,7 +35,6 @@ export default function AuthCard({
       <main className="flex flex-1 items-start justify-center px-4 py-10 sm:items-center sm:px-6">
         <Surface className="flex w-full max-w-sm flex-col gap-6 rounded-xl p-6 sm:p-8">
           <div className="flex flex-col items-center gap-3 text-center">
-            <CrewSprite size={32} />
             <Text variant="heading" size="lg" as="h1">
               {title}
             </Text>

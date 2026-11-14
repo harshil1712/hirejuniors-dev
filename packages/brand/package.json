@@ -7,11 +7,7 @@
     "./logo.svg": "./logo.svg",
     "./Logo.tsx": "./Logo.tsx",
     "./Logo.astro": "./Logo.astro",
-    "./logo-cells": "./logo-cells.ts",
-    "./theme": "./theme.ts",
-    "./crew/crew": "./crew/crew.ts",
-    "./crew/crew.css": "./crew/crew.css",
-    "./crew/CrewSprite": "./crew/CrewSprite.tsx"
+    "./theme": "./theme.ts"
   },
   "devDependencies": {
     "@types/react": "19.3.0"

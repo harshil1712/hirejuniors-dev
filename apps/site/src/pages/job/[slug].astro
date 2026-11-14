@@ -8,7 +8,7 @@ import { buildJobPosting } from "../../lib/job-posting";
 import { sanitizeDescription } from "../../lib/sanitize";
 import { jobTitle, jobDescription } from "../../lib/meta";
 import { countryName } from "../../lib/countries";
-import { levelSlug, levelLabelLower } from "../../lib/levels";
+import { levelSlug, levelLabel, levelLabelLower, levelLabelSingular } from "../../lib/levels";
 import { formatDate, isoDate } from "../../lib/format";
 import { breadcrumbs, CACHE_OK, CACHE_GONE, NOINDEX, locationLabel } from "../../lib/ssr";
 import { PROJECT } from "#project";
@@ -34,16 +34,23 @@ const related = retired
       companyId: company.id, level: job.level, excludeId: job.id, limit: 6,
     })
   : [];
+const applyHost = (() => {
+  try { return new URL(job.applyUrl).hostname.replace(/^www\./, ""); }
+  catch { return "the company's site"; }
+})();
 
+const crumbs = [
+  breadcrumbs([
+    { name: "Home", path: "/" },
+    { name: "Jobs", path: "/jobs/" },
+    { name: levelLabel(job.level), path: `/jobs/${levelSlug(job.level)}/` },
+    { name: job.title, path: `/job/${job.slug}/` },
+  ], origin),
+];
 const jsonLd = retired
-  ? []
+  ? crumbs
   : [
-      breadcrumbs([
-        { name: "Home", path: "/" },
-        { name: "Jobs", path: "/jobs/" },
-        { name: levelLabelLower(job.level), path: `/jobs/${levelSlug(job.level)}/` },
-        { name: job.title, path: `/job/${job.slug}/` },
-      ], origin),
+      ...crumbs,
       buildJobPosting({
         slug: job.slug,
         title: job.title,
@@ -65,55 +72,133 @@ const jsonLd = retired
         company,
       }),
     ];
-const crumbs = [
-  breadcrumbs([
-    { name: "Home", path: "/" },
-    { name: "Jobs", path: "/jobs/" },
-    { name: job.title, path: `/job/${job.slug}/` },
-  ], origin),
-];
+const workplaceLabel = job.workplace === "remote" ? "remote" : job.workplace === "hybrid" ? "hybrid" : "on-site";
 ---
 <PageLayout
   title={title}
   description={description}
   canonical={canonical}
   robots={retired ? NOINDEX : undefined}
-  width="prose"
-  jsonLdEntities={retired ? crumbs : jsonLd}
+  width="wide"
+  jsonLdEntities={jsonLd}
 >
   {retired ? (
-    <>
-      <p class="gone"><strong>This role is no longer available.</strong></p>
-      <h1 class="font-display">{job.title} at {company.name}</h1>
-      <p class="meta">{levelLabelLower(job.level)}{place ? ` · ${place}` : ""}</p>
-      {related.length > 0 && (
-        <>
-          <h2 class="font-display">Similar open roles</h2>
-          <JobList jobs={related} />
-        </>
-      )}
-    </>
+    <div class="job retired">
+      <div class="body">
+        <nav class="crumb" aria-label="Breadcrumb">
+          <a href="/jobs/">Jobs</a> / <a href={`/jobs/${levelSlug(job.level)}/`}>{levelLabel(job.level)}</a>
+        </nav>
+        <p class="gone"><strong>This role is no longer available.</strong></p>
+        <h1 class="font-display">{job.title}</h1>
+        <p class="meta">{company.name} · {levelLabelLower(job.level)}{place ? ` · ${place}` : ""}</p>
+        {related.length > 0 && (
+          <>
+            <h2 class="font-display">Similar open roles</h2>
+            <JobList jobs={related} as="h3" />
+          </>
+        )}
+      </div>
+    </div>
   ) : (
-    <>
-      <h1 class="font-display">{job.title}</h1>
-      <p class="co">at <a href={`/companies/${company.slug}/`}>{company.name}</a></p>
-      <p class="meta">
-        {levelLabelLower(job.level)}{place ? ` · ${place}` : ""}
-        {" · posted "}<time datetime={isoDate(job.postedAt ?? job.firstSeenAt)}>{formatDate(job.postedAt ?? job.firstSeenAt)}</time>
-      </p>
-      <p class="apply"><a class="btn cta" href={job.applyUrl} rel="nofollow noopener">Apply on the company's site ↗</a></p>
-      {job.descriptionHtml ? (
-        <article class="prose" set:html={sanitizeDescription(job.descriptionHtml)} />
-      ) : (
-        <p class="prose">{job.descriptionText}</p>
-      )}
-    </>
+    <div class="job">
+      <div class="body">
+        <nav class="crumb" aria-label="Breadcrumb">
+          <a href="/jobs/">Jobs</a> / <a href={`/jobs/${levelSlug(job.level)}/`}>{levelLabel(job.level)}</a>
+          {place ? ` / ${place}` : ""}
+        </nav>
+        <h1 class="font-display">{job.title}</h1>
+        {job.descriptionHtml ? (
+          <article class="prose" set:html={sanitizeDescription(job.descriptionHtml)} />
+        ) : (
+          <p class="prose">{job.descriptionText}</p>
+        )}
+      </div>
+      <aside class="stub">
+        <div class="top">
+          <dl>
+            <dt>Company</dt><dd><a href={`/companies/${company.slug}/`}>{company.name}</a></dd>
+            <dt>Level</dt><dd>{levelLabelSingular(job.level)}</dd>
+            <dt>Where</dt><dd>{place || job.locationRaw}{job.workplace ? ` · ${workplaceLabel}` : ""}</dd>
+            <dt>Posted</dt><dd><time datetime={isoDate(job.postedAt ?? job.firstSeenAt)}>{formatDate(job.postedAt ?? job.firstSeenAt)}</time></dd>
+            {job.validThrough && (
+              <><dt>Closes</dt><dd><time datetime={isoDate(job.validThrough)}>{formatDate(job.validThrough)}</time></dd></>
+            )}
+          </dl>
+        </div>
+        <a class="tear" href={job.applyUrl} target="_blank" rel="nofollow noopener">
+          <span>Apply on {applyHost}</span><span>↗</span>
+        </a>
+      </aside>
+    </div>
   )}
 </PageLayout>
 <style>
-  h1 { font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; }
-  .co { margin: 0 0 8px; font-size: 17px; }
-  .meta { color: var(--color-kumo-subtle); margin: 0 0 20px; }
-  .apply { margin: 0 0 24px; }
-  .gone { color: var(--color-kumo-warning, #8a6d1a); margin-bottom: 8px; }
+  .job {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 40px;
+    padding-top: 56px;
+  }
+  .crumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+    margin-bottom: 18px;
+  }
+  .crumb a { color: var(--color-kumo-subtle); }
+  .body h1 {
+    font-size: 46px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    margin: 0 0 22px;
+  }
+  .body .prose, .body .prose p {
+    font-size: 17px;
+    line-height: 1.65;
+    max-width: 62ch;
+    color: var(--color-kumo-default);
+  }
+  .stub {
+    border: 1.5px solid var(--color-kumo-default);
+    border-radius: 12px;
+    background: var(--color-kumo-elevated);
+    overflow: hidden;
+    align-self: start;
+  }
+  .stub .top { padding: 20px; }
+  .stub dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
+  .stub dt {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-kumo-subtle);
+    padding-top: 2px;
+  }
+  .stub dd { margin: 0; font-size: 15px; font-weight: 500; }
+  .tear {
+    border-top: 2px dotted var(--color-kumo-line);
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 16px;
+    background: var(--marker);
+    color: var(--marker-ink);
+    text-decoration: none;
+  }
+  .tear:hover { filter: brightness(0.97); }
+  .gone { color: var(--color-kumo-danger); margin: 0 0 8px; }
+  .meta { color: var(--color-kumo-subtle); margin: 0 0 24px; }
+  .retired h2 { font-size: 22px; margin: 28px 0 14px; }
+  @media (max-width: 800px) {
+    .job { grid-template-columns: 1fr; }
+    .stub { order: -1; }
+    .body h1 { font-size: 34px; }
+  }
 </style>

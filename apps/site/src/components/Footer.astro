@@ -4,9 +4,11 @@ import { PROJECT } from "#project";
 <footer>
   <div class="wrap inner">
     <nav aria-label="Footer">
+      <a href="/jobs/">Jobs</a>
+      <a href="/companies/">Companies</a>
       <a href="/blog/">Blog</a>
       <a href="/privacy">Privacy</a>
-      <a href="/rss.xml">RSS</a>
+      <a href="/jobs/rss.xml">RSS</a>
     </nav>
     <span>{PROJECT.productName}</span>
   </div>
@@ -29,4 +31,5 @@ import { PROJECT } from "#project";
     flex-wrap: wrap;
     gap: 16px;
   }
+  nav a { color: var(--color-kumo-default); }
 </style>

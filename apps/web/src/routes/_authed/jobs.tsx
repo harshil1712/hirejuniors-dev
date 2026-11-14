@@ -10,13 +10,13 @@ import {
   Select,
   Table,
   Text,
+  Empty,
 } from "@cloudflare/kumo";
 import { MagnifyingGlass, WarningCircle } from "@phosphor-icons/react";
 import type { Company, Job, JobStatus } from "../../../worker/api/schemas";
 import { listCompanies, listJobs, type JobFilters } from "../../lib/admin-api";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
-import { CrewEmpty } from "../../components/crew-empty";
 
 interface JobsSearch {
   status?: JobStatus;
@@ -191,7 +191,7 @@ function Jobs() {
           <Loader size="base" aria-label="Loading jobs" />
         </div>
       ) : jobs.length === 0 ? (
-        <CrewEmpty
+        <Empty
           title="No jobs match"
           description="Try widening the filters, or wait for the next ingest run."
         />

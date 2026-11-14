@@ -9,7 +9,6 @@ import { siteDb } from "../lib/site-db";
 import {
   listActiveJobs, countActiveJobs, levelCounts, countryCounts,
 } from "@hirejuniors/db/queries";
-import { countryName } from "../lib/countries";
 import { breadcrumbs, itemList, cacheHeaders, CACHE_OK } from "../lib/ssr";
 import { getPublishedPosts } from "../lib/posts";
 
@@ -65,27 +64,32 @@ const jsonLd = [
   jsonLdEntities={jsonLd}
 >
   <section class="hero">
-    <h1 class="font-display">Junior jobs and internships, <em>in one place</em>.</h1>
-    <p class="sub">
-      {total} open roles for people starting out — internships, apprenticeships,
-      graduate schemes and junior positions, collected from company job boards
-      and refreshed weekly.
-    </p>
-    <div class="btns">
-      <a class="btn cta" href="/jobs/">Browse all jobs</a>
-      <a class="btn btn-secondary cta" href="/companies/">Companies</a>
+    <div class="hero-copy">
+      <h1>Your <span class="marker">first</span> tech job is on this board.</h1>
+      <p class="lede">
+        {total} internships, apprenticeships, graduate and junior roles,
+        collected from company job boards every Monday. Closed roles come down.
+      </p>
+    </div>
+    <div class="hero-side">
+      <form class="find" method="get" action="/jobs/" role="search">
+        <label for="hero-q">Role or company</label>
+        <div class="find-box">
+          <input id="hero-q" type="search" name="q" placeholder="e.g. frontend, Stripe" />
+          <button type="submit">Find roles</button>
+        </div>
+      </form>
+      <p class="kicker">Browse by level and country</p>
+      <HubLinks levelCounts={levelMap} countryCounts={countryList} />
     </div>
   </section>
 
-  <section class="hubs-sec">
-    <h2 class="font-display">Browse by level and country</h2>
-    <HubLinks levelCounts={levelMap} countryCounts={countryList} />
-  </section>
-
   <section class="latest-jobs">
-    <h2 class="font-display">Latest roles</h2>
-    <JobList jobs={jobs} />
-    {jobs.length > 0 && <p class="more"><a href="/jobs/">See all {total} roles →</a></p>}
+    <div class="sect">
+      <h2 class="font-display">Pinned this week</h2>
+      {jobs.length > 0 && <a href="/jobs/">All {total} roles →</a>}
+    </div>
+    <JobList jobs={jobs} as="h3" />
   </section>
 
   <section class="faq" aria-labelledby="faq-title">
@@ -100,22 +104,86 @@ const jsonLd = [
 
   {latest.length > 0 && (
     <section class="latest">
-      <h2 class="font-display">From the blog</h2>
+      <div class="sect"><h2 class="font-display">From the blog</h2><a href="/blog/">All posts →</a></div>
       <PostList posts={latest.slice(0, 3)} size="compact" headingLevel={3} showTags={false} />
     </section>
   )}
 </PageLayout>
 <style>
-  .hero { padding-block: 56px 40px; max-width: 720px; }
-  h1 { font-size: 56px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.04; text-wrap: balance; margin: 0; }
-  h1 em { font-style: normal; color: var(--brand-text); }
-  .sub { margin-top: 20px; font-size: 19px; color: var(--color-kumo-subtle); line-height: 1.6; }
-  .btns { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .hero {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 48px;
+    align-items: end;
+    padding: 72px 0 48px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(44px, 6vw, 68px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 0.98;
+    margin: 0 0 22px;
+  }
+  h1 .marker {
+    background: linear-gradient(transparent 12%, var(--marker) 12%, var(--marker) 92%, transparent 92%);
+    padding: 0 0.08em;
+  }
+  .lede { font-size: 19px; line-height: 1.5; color: var(--color-kumo-subtle); max-width: 34ch; margin: 0; }
+  .hero-side { display: grid; gap: 14px; justify-items: start; }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+    margin: 0;
+  }
+  .find { display: grid; gap: 8px; width: 100%; }
+  .find label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+  }
+  .find-box {
+    display: flex;
+    border: 1.5px solid var(--color-kumo-default);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-kumo-elevated);
+  }
+  .find-box input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--color-kumo-default);
+  }
+  .find-box input:focus { outline: none; }
+  .find-box:focus-within { outline: 2px solid var(--color-kumo-default); outline-offset: 2px; }
+  .find-box button {
+    border: 0;
+    background: var(--color-kumo-brand);
+    color: var(--brand-ink);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    padding: 0 16px;
+    cursor: pointer;
+  }
   section { margin-bottom: 48px; }
-  h2 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 16px; }
-  .more { font-size: 14px; }
+  .sect { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .sect h2, .faq h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  .sect a { font-size: 14px; font-weight: 500; color: var(--color-kumo-default); }
   .faq details { border-bottom: 1px solid var(--color-kumo-line); padding: 12px 0; }
-  .faq summary { cursor: pointer; font-weight: 600; }
+  .faq summary { cursor: pointer; font-weight: 700; font-family: var(--font-display); }
   .faq details p { color: var(--color-kumo-subtle); margin-top: 8px; }
-  @media (max-width: 600px) { h1 { font-size: 38px; } }
+  @media (max-width: 800px) {
+    .hero { grid-template-columns: 1fr; padding-top: 48px; }
+  }
 </style>
