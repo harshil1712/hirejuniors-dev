@@ -116,7 +116,7 @@ rows with `origin = 'manual'`. For each queued manual candidate:
    - Greenhouse: `(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board\?for=)?([A-Za-z0-9_-]+)`
    - Lever: `jobs\.lever\.co/([A-Za-z0-9_.-]+)`
    - Ashby: `jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)`
-   Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
+     Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
 3. If no link is found, guess `board = first label of d` (e.g. `stripe` from
    `stripe.com`) and probe Greenhouse, Lever, Ashby in that order.
 4. First successful `probe` → `found`. None → `not_found`. Network errors on
@@ -233,17 +233,26 @@ Questions:
     "type": "choice",
     "instructions": "In which currency is pay stated?",
     "criteria": {
-      "USD": "US dollars", "EUR": "Euros", "GBP": "British pounds",
-      "CAD": "Canadian dollars", "AUD": "Australian dollars", "INR": "Indian rupees",
-      "SGD": "Singapore dollars", "other": "Another currency", "none": "Pay is not stated"
+      "USD": "US dollars",
+      "EUR": "Euros",
+      "GBP": "British pounds",
+      "CAD": "Canadian dollars",
+      "AUD": "Australian dollars",
+      "INR": "Indian rupees",
+      "SGD": "Singapore dollars",
+      "other": "Another currency",
+      "none": "Pay is not stated"
     }
   },
   "salary_period": {
     "type": "choice",
     "instructions": "What period does the stated pay cover?",
     "criteria": {
-      "YEAR": "Per year", "MONTH": "Per month", "WEEK": "Per week",
-      "HOUR": "Per hour", "none": "Pay is not stated"
+      "YEAR": "Per year",
+      "MONTH": "Per month",
+      "WEEK": "Per week",
+      "HOUR": "Per hour",
+      "none": "Pay is not stated"
     }
   }
 }
@@ -283,15 +292,18 @@ with `fields` exactly:
 ```json
 {
   "min_years_experience": {
-    "type": "number", "decimals": 0,
+    "type": "number",
+    "decimals": 0,
     "instructions": "Minimum years of professional work experience required. Null if not stated."
   },
   "salary_min": {
-    "type": "number", "decimals": 0,
+    "type": "number",
+    "decimals": 0,
     "instructions": "Lowest stated pay amount for this role, as a plain number. Null if pay is not stated."
   },
   "salary_max": {
-    "type": "number", "decimals": 0,
+    "type": "number",
+    "decimals": 0,
     "instructions": "Highest stated pay amount for this role, as a plain number. Same as the lowest if only one amount is given. Null if pay is not stated."
   },
   "application_deadline": {
@@ -299,7 +311,8 @@ with `fields` exactly:
     "instructions": "Last date applications are accepted. Null if not stated."
   },
   "graduation_year": {
-    "type": "number", "decimals": 0,
+    "type": "number",
+    "decimals": 0,
     "instructions": "Year candidates are expected to graduate. Null if not stated."
   }
 }
@@ -360,6 +373,7 @@ they leave the queue.
    ```
 
    `open.noul ≤ 0.15` → retire `closed_page`; else stamp `last_checked_at`.
+
 4. Any other status / network error / model error → stamp (status) or leave
    untouched (errors), as today.
 
