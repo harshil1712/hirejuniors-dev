@@ -116,16 +116,16 @@ function Sources() {
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-kumo-line">
-          <Table layout="fixed" className="min-w-[880px]">
+          <Table layout="fixed" className="min-w-[960px]">
             <Table.Header>
               <Table.Row>
-                <Table.Head>Company</Table.Head>
-                <Table.Head className="w-36">Platform</Table.Head>
-                <Table.Head className="w-44">Board</Table.Head>
+                <Table.Head className="w-40">Company</Table.Head>
+                <Table.Head className="w-28">Platform</Table.Head>
+                <Table.Head className="w-32">Board</Table.Head>
                 <Table.Head className="w-24">Enabled</Table.Head>
                 <Table.Head className="w-24">All jobs</Table.Head>
                 <Table.Head className="w-32">Last run</Table.Head>
-                <Table.Head className="w-44">Status</Table.Head>
+                <Table.Head className="w-36">Status</Table.Head>
                 <Table.Head className="w-24 text-right">Active</Table.Head>
               </Table.Row>
             </Table.Header>

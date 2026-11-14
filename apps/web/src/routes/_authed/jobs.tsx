@@ -198,10 +198,10 @@ function Jobs() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-kumo-line" aria-busy={loading}>
-            <Table layout="fixed" className="min-w-[720px]">
+            <Table layout="fixed" className="min-w-[860px]">
               <Table.Header>
                 <Table.Row>
-                  <Table.Head>Title</Table.Head>
+                  <Table.Head className="w-48">Title</Table.Head>
                   <Table.Head className="w-40">Company</Table.Head>
                   <Table.Head className="w-28">Level</Table.Head>
                   <Table.Head className="w-48">Location</Table.Head>
