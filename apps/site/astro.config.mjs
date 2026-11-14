@@ -25,9 +25,11 @@ const lastmods = postLastmods();
 
 export default defineConfig({
   site: `https://${PROJECT.domain}`,
-  output: "static",
+  output: "server",
   integrations: [
     sitemap({
+      // SSR job sitemap is served by the worker, not emitted into dist.
+      customSitemaps: [`https://${PROJECT.domain}/sitemap-jobs.xml`],
       serialize(item) {
         if (lastmods[item.url]) item.lastmod = lastmods[item.url];
         return item;

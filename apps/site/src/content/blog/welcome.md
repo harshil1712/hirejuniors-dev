@@ -1,32 +1,27 @@
 ---
-title: "What the Hire Juniors starter actually gives you"
-description: "A walk through the auth, database, admin area and deploy pipeline that come with this Cloudflare starter, and the parts you still own."
-pubDate: 2026-10-30
-updatedDate: 2026-10-30
+title: "Why Hire Juniors exists"
+description: "Junior roles are scattered across company boards and buried in big aggregators. Hire Juniors collects them in one public, crawlable list."
+pubDate: 2026-11-14
 author: "Hire Juniors team"
-tags: ["starter", "cloudflare"]
-tldr: "Hire Juniors is a monorepo where sign-in, a D1 database, an admin area and a deploy pipeline already work; you rename it and write your product instead of its plumbing. This post lists exactly what is wired and what is left to you."
+tags: ["hire-juniors", "junior-jobs"]
+tldr: "Hire Juniors is a public board that collects internships, apprenticeships, graduate schemes and junior jobs from company boards and refreshes them weekly — no account needed."
 faq:
-  - q: "Does the starter include user accounts?"
-    a: "Yes. Email/password sign-up with verification, Google sign-in when you add OAuth keys, session management and an admin area (ban, role change, session revocation) all work out of the box."
-  - q: "What do I need to deploy it?"
-    a: "A Cloudflare account, a domain, and the GitHub secrets listed in docs/deploy.md. Production ships through a merged PR. The workflow runs checks, deploys, smoke-tests and rolls back on failure."
+  - q: "Do I need an account to use Hire Juniors?"
+    a: "No. Every listing is public. Each job links to the company's own application page — applying always happens on the employer's site."
+  - q: "How often are listings updated?"
+    a: "Sources are re-read weekly. New roles appear after a run and closed roles are retired, leaving every list accurate."
 ---
 
-## The short version
+## The problem
 
-Hire Juniors is a pnpm monorepo: a React single-page app (`apps/web`), a static marketing site (`apps/site`), a shared brand package, and one `alchemy.run.ts` that describes all the Cloudflare infrastructure. Copy it, run the init script with your name and domain, and you have a working product skeleton.
+Entry-level roles are oddly hard to find. They live on individual company boards, on aggregators that bury them under senior listings, and in posts that vanish once the role closes. If you're looking for your first job, you end up checking a dozen places.
 
-## What is already wired
+## What the board does
 
-**Auth.** Better Auth handles email/password with mandatory verification, password reset, Google sign-in, and an admin plugin. Turnstile sits on the credential endpoints. Setting `OWNER_ADMIN_EMAIL` promotes your verified account to admin automatically.
+Hire Juniors reads public job boards — Greenhouse, Lever, Ashby and Amazon Jobs today — filters for genuinely junior roles (internships, apprenticeships, graduate schemes and positions asking for roughly zero to two years of experience) and keeps one list at [hirejuniors.dev](/). Every job links straight to the company's application page; we don't broker applications.
 
-**Database.** D1 with Drizzle ORM. The auth schema is generated (`npm run auth:generate`) and migrations live in `apps/web/migrations`.
+## What happens when a role closes
 
-**Admin area.** An admin-only page lists users and supports role changes, bans and session revocation through the Better Auth admin plugin.
+Each source is re-read weekly. A role that disappears from its feed, expires, or whose application link stops working is retired: it leaves every list, and its page answers 410 with links to similar open roles. Sitemaps and the jobs RSS reflect the live set, so what a crawler sees is what exists.
 
-**Deploys.** Push to `main` runs check → test → build → deploy → smoke → automatic rollback. Every PR gets a preview deployment. The whole config is one file, and nothing lives outside it.
-
-## What is left to you
-
-The product itself: schema tables, routes, screens. The starter deliberately ships no demo widgets or sample business logic, so there is nothing to delete before you start.
+Questions or a board we should be reading? Email [support@hirejuniors.dev](mailto:support@hirejuniors.dev).

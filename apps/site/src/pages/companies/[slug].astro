@@ -1,0 +1,51 @@
+---
+export const prerender = false;
+import PageLayout from "../../components/PageLayout.astro";
+import ListingPage from "../../components/ListingPage.astro";
+import { siteDb } from "../../lib/site-db";
+import { companyBySlug, listActiveJobs } from "@hirejuniors/db/queries";
+import { breadcrumbs, itemList, CACHE_OK, CACHE_GONE } from "../../lib/ssr";
+import { PROJECT } from "#project";
+
+const PER = 24;
+const origin = `https://${PROJECT.domain}`;
+const db = siteDb();
+const row = await companyBySlug(db, Astro.params.slug ?? "");
+if (!row) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+const { company, activeCount } = row;
+const page = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10) || 1);
+const pageCount = Math.max(1, Math.ceil(activeCount / PER));
+if (page > pageCount) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+Astro.response.headers.set("cache-control", CACHE_OK);
+const jobs = await listActiveJobs(db, { companyId: company.id }, { offset: (page - 1) * PER, limit: PER });
+const title = `${company.name} junior jobs and internships — ${PROJECT.productName}`;
+const description = `${activeCount} open junior roles, internships and graduate positions at ${company.name}.`;
+---
+<PageLayout
+  title={title}
+  description={description}
+  canonical={`${origin}/companies/${company.slug}/`}
+  width="wide"
+  jsonLdEntities={[
+    breadcrumbs([
+      { name: "Home", path: "/" },
+      { name: "Companies", path: "/companies/" },
+      { name: company.name, path: `/companies/${company.slug}/` },
+    ], origin),
+    {
+      "@type": "Organization",
+      name: company.name,
+      ...(company.homepageUrl ? { sameAs: company.homepageUrl } : {}),
+      ...(company.logoUrl ? { logo: company.logoUrl } : {}),
+    },
+    itemList(jobs, origin),
+  ]}
+>
+  <ListingPage heading={company.name} jobs={jobs} total={activeCount}
+    page={page} pageCount={pageCount} basePath={`/companies/${company.slug}/`}
+    empty="No open roles at this company right now." />
+</PageLayout>

@@ -1,3 +1,4 @@
+export const prerender = true;
 import rss from "@astrojs/rss";
 import type { APIContext } from "astro";
 import { getPublishedPosts } from "../lib/posts";

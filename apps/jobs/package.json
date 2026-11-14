@@ -6,7 +6,8 @@
   "exports": {
     "./platforms": "./src/platforms/index.ts",
     "./classify": "./src/classify.ts",
-    "./location": "./src/location.ts"
+    "./location": "./src/location.ts",
+    "./countries": "./src/countries.ts"
   },
   "scripts": {
     "test": "vp test",

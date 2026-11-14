@@ -1,0 +1,60 @@
+---
+import { formatDate } from "../lib/format";
+
+interface Item {
+  slug: string;
+  title: string;
+  companyName: string;
+  level: string;
+  locationRaw: string;
+  postedAt: Date | null;
+  firstSeenAt: Date;
+}
+const { jobs, empty = "No open roles here right now." } = Astro.props as {
+  jobs: Item[];
+  empty?: string;
+};
+---
+{jobs.length === 0 ? (
+  <p class="empty">{empty}</p>
+) : (
+  <ul class="joblist">
+    {jobs.map((j) => (
+      <li>
+        <a class="row" href={`/job/${j.slug}/`}>
+          <span class="t">{j.title}</span>
+          <span class="c">{j.companyName}</span>
+          <span class="meta">
+            {j.level}{j.locationRaw ? ` · ${j.locationRaw}` : ""}
+          </span>
+          <time class="d" datetime={(j.postedAt ?? j.firstSeenAt).toISOString().slice(0, 10)}>
+            {formatDate(j.postedAt ?? j.firstSeenAt)}
+          </time>
+        </a>
+      </li>
+    ))}
+  </ul>
+)}
+<style>
+  .joblist { list-style: none; margin: 0; padding: 0; }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+    gap: 12px;
+    align-items: baseline;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--color-kumo-line);
+    text-decoration: none;
+    color: var(--color-kumo-default);
+    border-radius: 6px;
+  }
+  .row:hover .t { color: var(--brand-text); }
+  .t { font-weight: 600; min-width: 0; }
+  .c { color: var(--color-kumo-subtle); min-width: 0; }
+  .meta { color: var(--color-kumo-subtle); font-size: 13px; min-width: 0; }
+  .d { color: var(--color-kumo-subtle); font-size: 13px; white-space: nowrap; }
+  .empty { color: var(--color-kumo-subtle); padding: 24px 0; }
+  @media (max-width: 700px) {
+    .row { grid-template-columns: 1fr; gap: 2px; }
+  }
+</style>

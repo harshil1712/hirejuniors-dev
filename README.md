@@ -12,7 +12,8 @@ We love when people contribute to the project. Refer to the [CONTRIBUTING.md](./
 
 - React SPA (Vite + TanStack Router + Kumo UI) on Cloudflare Workers
 - Hono API worker — Better Auth, D1 via Drizzle ORM, Turnstile
-- Astro static marketing site
+- Astro job board (server-rendered over D1) + blog
+- Cloudflare Workflows for weekly job ingest and retirement
 - Alchemy IaC (one stack for D1, workers, domains, previews)
 
 ## Getting Started

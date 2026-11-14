@@ -1,0 +1,55 @@
+---
+export const prerender = false;
+import PageLayout from "../../../../../components/PageLayout.astro";
+import ListingPage from "../../../../../components/ListingPage.astro";
+import { siteDb } from "../../../../../lib/site-db";
+import { listActiveJobs, countActiveJobs } from "@hirejuniors/db/queries";
+import { levelFromSlug, levelSlug, levelLabel, levelLabelLower } from "../../../../../lib/levels";
+import { countryCodeFromSlug, countrySlug, countryName } from "../../../../../lib/countries";
+import { breadcrumbs, itemList, CACHE_OK, CACHE_GONE } from "../../../../../lib/ssr";
+import { PROJECT } from "#project";
+
+const PER = 24;
+const origin = `https://${PROJECT.domain}`;
+const level = levelFromSlug(Astro.params.level ?? "");
+const code = countryCodeFromSlug(Astro.params.country ?? "");
+if (!level || !code) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+const name = countryName(code);
+const db = siteDb();
+const total = await countActiveJobs(db, { level, countryCode: code });
+// Level x country hub with zero active jobs is a 404 (spec).
+if (total === 0) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+const page = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10) || 1);
+const pageCount = Math.max(1, Math.ceil(total / PER));
+if (page > pageCount) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+Astro.response.headers.set("cache-control", CACHE_OK);
+const jobs = await listActiveJobs(db, { level, countryCode: code }, { offset: (page - 1) * PER, limit: PER });
+const label = levelLabelLower(level);
+const title = `${total} ${label} in ${name} · ${PROJECT.productName}`;
+const description = `${total} open ${label} in ${name} — collected from company job boards, refreshed weekly.`;
+const hubPath = `/jobs/${levelSlug(level)}/in/${countrySlug(code)}/`;
+---
+<PageLayout
+  title={title}
+  description={description}
+  canonical={`${origin}${hubPath}`}
+  width="wide"
+  jsonLdEntities={[
+    breadcrumbs([
+      { name: "Home", path: "/" },
+      { name: "Jobs", path: "/jobs/" },
+      { name: levelLabel(level), path: `/jobs/${levelSlug(level)}/` },
+      { name, path: hubPath },
+    ], origin),
+    itemList(jobs, origin),
+  ]}
+>
+  <ListingPage heading={`${levelLabel(level)} in ${name}`} jobs={jobs} total={total}
+    page={page} pageCount={pageCount} basePath={hubPath} />
+</PageLayout>

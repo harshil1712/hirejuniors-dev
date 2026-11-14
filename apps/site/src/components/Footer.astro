@@ -1,6 +1,5 @@
 ---
-import { PROJECT, APP_DOMAIN } from "#project";
-const APP_URL = import.meta.env.PUBLIC_APP_URL ?? `https://${APP_DOMAIN}`;
+import { PROJECT } from "#project";
 ---
 <footer>
   <div class="wrap inner">
@@ -8,7 +7,6 @@ const APP_URL = import.meta.env.PUBLIC_APP_URL ?? `https://${APP_DOMAIN}`;
       <a href="/blog/">Blog</a>
       <a href="/privacy">Privacy</a>
       <a href="/rss.xml">RSS</a>
-      <a href={APP_URL}>App</a>
     </nav>
     <span>{PROJECT.productName}</span>
   </div>

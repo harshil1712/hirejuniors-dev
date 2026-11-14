@@ -117,37 +117,37 @@ function Dashboard() {
             <LayerCard.Secondary>Last ingest run</LayerCard.Secondary>
             <LayerCard.Primary>
               {summary.lastRun ? (
-                <span className="flex items-center gap-3">
-                  <Badge
-                    variant={
-                      summary.lastRun.status === "succeeded"
-                        ? "success"
-                        : summary.lastRun.status === "failed"
-                          ? "error"
-                          : "warning"
-                    }
-                  >
-                    {summary.lastRun.status}
-                  </Badge>
-                  <span>
-                    {dateTimeFormat.format(new Date(summary.lastRun.startedAt))} ·{" "}
-                    {summary.lastRun.trigger}
+                <div className="flex flex-col gap-1">
+                  <span className="flex items-center gap-3">
+                    <Badge
+                      variant={
+                        summary.lastRun.status === "succeeded"
+                          ? "success"
+                          : summary.lastRun.status === "failed"
+                            ? "error"
+                            : "warning"
+                      }
+                    >
+                      {summary.lastRun.status}
+                    </Badge>
+                    <span>
+                      {dateTimeFormat.format(new Date(summary.lastRun.startedAt))} ·{" "}
+                      {summary.lastRun.trigger}
+                    </span>
                   </span>
-                </span>
+                  <Text variant="secondary" size="sm">
+                    <Link to="/runs/$id" params={{ id: summary.lastRun.id }}>
+                      View run
+                    </Link>{" "}
+                    · fetched {summary.lastRun.fetched} · inserted {summary.lastRun.inserted} ·
+                    retired {summary.lastRun.retired}
+                    {summary.lastRun.error ? ` · ${summary.lastRun.error}` : ""}
+                  </Text>
+                </div>
               ) : (
                 <Text variant="secondary">No runs yet</Text>
               )}
             </LayerCard.Primary>
-            {summary.lastRun && (
-              <Text variant="secondary" size="sm">
-                <Link to="/runs/$id" params={{ id: summary.lastRun.id }}>
-                  View run
-                </Link>{" "}
-                · fetched {summary.lastRun.fetched} · inserted {summary.lastRun.inserted} · retired{" "}
-                {summary.lastRun.retired}
-                {summary.lastRun.error ? ` · ${summary.lastRun.error}` : ""}
-              </Text>
-            )}
           </LayerCard>
         </>
       )}

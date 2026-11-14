@@ -1,11 +1,11 @@
 # Hire Juniors — agent guide
 
-Hire Juniors is a reusable starter for full-stack Cloudflare apps: a Vite/React SPA + Hono API worker with auth and D1, a static Astro marketing site, shared brand package, and one Alchemy stack. `vpx scripts/init.ts <name> <domain>` renames it into a product. This repo is developed mostly by agents; these rules keep production safe.
+Hire Juniors is a job board for junior roles and internships, built on the fastflare starter: a server-rendered Astro job board, an owner-only Vite/React admin dashboard + Hono API worker with auth and D1, a weekly ingest Workflow, a shared brand package, and one Alchemy stack. This repo is developed mostly by agents; these rules keep production safe.
 
 ## Repo map
 
 - `apps/web` — app.<domain> (React/TanStack Router file routes/Kumo SPA + Hono worker in `worker/`, D1 via Drizzle, Better Auth with email verification + Turnstile + admin plugin).
-- `apps/site` — <domain> apex (Astro, static marketing + blog). `packages/brand` — logo, tokens, fonts (shared by both apps).
+- `apps/site` — <domain> apex (Astro, server-rendered job board over the shared D1 + prerendered blog; spec `docs/specs/site.md`). `packages/brand` — logo, tokens, fonts (shared by both apps).
 - `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
 - Blog posts are Markdown in git: `apps/site/src/content/blog/*.md` — schema in `src/content.config.ts`, write via the `write-post` skill; SEO gate is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
@@ -48,7 +48,7 @@ Hire Juniors is a reusable starter for full-stack Cloudflare apps: a Vite/React 
 ## Decisions — don't re-propose
 
 - **SPA, not SSR.** The app is a Vite single-page app; the worker serves assets + `/api/*` (`runWorkerFirst`). No TanStack Start, no server rendering.
-- **Astro for marketing** (`apps/site`), static output, separate worker on the apex.
+- **Astro for the public job board** (`apps/site`), server output (job pages read D1 per request; blog/privacy prerendered), separate worker on the apex. `astro.local.config.mjs` adds the adapter for local builds; Alchemy injects it on deploy.
 - **Alchemy v2** (Effect style) owns all infra — no wrangler config files for deploy, no Terraform.
 - **Kumo UI** (`@cloudflare/kumo`) + Phosphor icons + Tailwind 4. No other component library.
 - **Workers Observability** (logs + traces) — no Sentry, no external APM.

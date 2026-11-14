@@ -1,6 +1,6 @@
 // Query helpers shared by the ingest pipeline (apps/jobs). Kept here so the
 // read paths later reused by apps/web + apps/site stay next to the schema.
-import { and, asc, eq, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, like, lt, or, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { company, ingestRun, job, source } from "./schema";
 
@@ -87,4 +87,154 @@ export function markSourceResult(db: Db, sourceId: string, ok: boolean, error?: 
       updatedAt: new Date(),
     })
     .where(eq(source.id, sourceId));
+}
+
+// ---- public job-board reads (apps/site) ----
+// Every listing helper below is status='active' scoped. The only function
+// that may return a non-active row is jobBySlug (the detail page needs the
+// retired row to render its 410 state).
+
+export interface JobFilters {
+  level?: (typeof job.level.enumValues)[number];
+  countryCode?: string;
+  companyId?: string;
+  q?: string;
+}
+
+function activeWhere(f: JobFilters) {
+  const conds = [eq(job.status, "active")];
+  if (f.level) conds.push(eq(job.level, f.level));
+  if (f.countryCode) conds.push(eq(job.countryCode, f.countryCode));
+  if (f.companyId) conds.push(eq(job.companyId, f.companyId));
+  if (f.q) conds.push(like(job.title, `%${f.q}%`));
+  return and(...conds);
+}
+
+const jobCard = {
+  id: job.id,
+  slug: job.slug,
+  title: job.title,
+  level: job.level,
+  workplace: job.workplace,
+  locationRaw: job.locationRaw,
+  city: job.city,
+  region: job.region,
+  countryCode: job.countryCode,
+  postedAt: job.postedAt,
+  firstSeenAt: job.firstSeenAt,
+  companyId: job.companyId,
+  companyName: company.name,
+  companySlug: company.slug,
+};
+
+const NEWEST = sql`coalesce(${job.postedAt}, ${job.firstSeenAt}) desc`;
+
+export function listActiveJobs(db: Db, f: JobFilters, opts: { offset?: number; limit: number }) {
+  return db
+    .select(jobCard)
+    .from(job)
+    .innerJoin(company, eq(job.companyId, company.id))
+    .where(activeWhere(f))
+    .orderBy(NEWEST, desc(job.id))
+    .limit(opts.limit)
+    .offset(opts.offset ?? 0);
+}
+
+export function countActiveJobs(db: Db, f: JobFilters = {}) {
+  return db
+    .select({ n: count() })
+    .from(job)
+    .where(activeWhere(f))
+    .then((r) => r[0]?.n ?? 0);
+}
+
+/** One row per level with its active count (hubs, llms.txt, sitemap). */
+export function levelCounts(db: Db) {
+  return db
+    .select({ level: job.level, n: count() })
+    .from(job)
+    .where(eq(job.status, "active"))
+    .groupBy(job.level);
+}
+
+/** One row per country_code with its active count; null codes last. */
+export function countryCounts(db: Db) {
+  return db
+    .select({ countryCode: job.countryCode, n: count() })
+    .from(job)
+    .where(eq(job.status, "active"))
+    .groupBy(job.countryCode)
+    .orderBy(desc(count()));
+}
+
+/** Level x country matrix for the combination hubs / sitemap. */
+export function levelCountryCounts(db: Db) {
+  return db
+    .select({ level: job.level, countryCode: job.countryCode, n: count() })
+    .from(job)
+    .where(eq(job.status, "active"))
+    .groupBy(job.level, job.countryCode);
+}
+
+/** Job detail — any status (410 page needs the retired row) + company. */
+export function jobBySlug(db: Db, slug: string) {
+  return db
+    .select({ job, company })
+    .from(job)
+    .innerJoin(company, eq(job.companyId, company.id))
+    .where(eq(job.slug, slug))
+    .then((r) => r[0] ?? null);
+}
+
+/** Retired-detail alternatives: active jobs from the same company or level. */
+export function relatedActiveJobs(
+  db: Db,
+  opts: {
+    companyId: string;
+    level: (typeof job.level.enumValues)[number];
+    excludeId: string;
+    limit: number;
+  },
+) {
+  return db
+    .select(jobCard)
+    .from(job)
+    .innerJoin(company, eq(job.companyId, company.id))
+    .where(
+      and(
+        eq(job.status, "active"),
+        or(eq(job.companyId, opts.companyId), eq(job.level, opts.level)),
+        sql`${job.id} != ${opts.excludeId}`,
+      ),
+    )
+    .orderBy(NEWEST, desc(job.id))
+    .limit(opts.limit);
+}
+
+/** Companies that have >= 1 active job, alphabetical. */
+export function companiesWithActiveJobs(db: Db) {
+  return db
+    .select({ company, activeCount: count() })
+    .from(company)
+    .innerJoin(job, and(eq(job.companyId, company.id), eq(job.status, "active")))
+    .groupBy(company.id)
+    .orderBy(asc(company.name));
+}
+
+export function companyBySlug(db: Db, slug: string) {
+  return db
+    .select({ company, activeCount: count() })
+    .from(company)
+    .leftJoin(job, and(eq(job.companyId, company.id), eq(job.status, "active")))
+    .where(eq(company.slug, slug))
+    .groupBy(company.id)
+    .then((r) => r[0] ?? null);
+}
+
+/** Slug + lastmod source for sitemap-jobs.xml (active only). */
+export function sitemapJobRows(db: Db) {
+  return db
+    .select({ slug: job.slug, updatedAt: job.updatedAt })
+    .from(job)
+    .where(eq(job.status, "active"));
 }

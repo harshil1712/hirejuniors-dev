@@ -1,11 +1,11 @@
 ---
+export const prerender = true;
 import { getEntry, render } from "astro:content";
 import PageLayout from "../../components/PageLayout.astro";
 import TagList from "../../components/TagList.astro";
 import { getPublishedPosts, type Post } from "../../lib/posts";
 import { formatDate, isoDate, sameDay } from "../../lib/format";
-import { PROJECT, APP_DOMAIN } from "#project";
-const APP_URL = import.meta.env.PUBLIC_APP_URL ?? `https://${APP_DOMAIN}`;
+import { PROJECT } from "#project";
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
@@ -117,11 +117,11 @@ if (post.data.faq?.length) {
     </section>
   )}
   <section class="cta" aria-labelledby="post-cta">
-    <h2 class="font-display" id="post-cta">Start your SaaS on {PROJECT.productName}</h2>
-    <p>Auth, D1, an admin area, per-PR deploys and a blog like this one, already working on Cloudflare. Rename the repo with one command.</p>
+    <h2 class="font-display" id="post-cta">Looking for your first role?</h2>
+    <p>{PROJECT.productName} lists internships, apprenticeships, graduate and junior roles from company job boards, refreshed every week.</p>
     <div class="cta-links">
-      <a class="btn" href={APP_URL}>Get {PROJECT.productName}</a>
-      <a class="btn btn-secondary" href="/#ships">See what ships</a>
+      <a class="btn" href="/jobs/">Browse jobs</a>
+      <a class="btn btn-secondary" href="/companies/">See companies</a>
     </div>
   </section>
 </PageLayout>

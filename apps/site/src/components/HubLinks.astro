@@ -1,0 +1,46 @@
+---
+import { levelSlug, levelLabel, LEVELS } from "../lib/levels";
+import { countrySlug, countryName } from "../lib/countries";
+
+const { levelCounts = {}, countryCounts = [], maxCountries = 8 } = Astro.props as {
+  levelCounts?: Record<string, number>;
+  countryCounts?: { code: string; n: number }[];
+  maxCountries?: number;
+};
+const countries = countryCounts.slice(0, maxCountries);
+---
+<nav class="hubs" aria-label="Job hubs">
+  <ul>
+    {LEVELS.map((l) => (
+      <li>
+        <a href={`/jobs/${levelSlug(l)}/`}>
+          {levelLabel(l)}
+          {levelCounts[l] ? <span class="n">{levelCounts[l]}</span> : null}
+        </a>
+      </li>
+    ))}
+    {countries.map((c) => (
+      <li>
+        <a href={`/jobs/in/${countrySlug(c.code)}/`}>
+          {countryName(c.code)} <span class="n">{c.n}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>
+<style>
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  a {
+    display: inline-flex;
+    gap: 6px;
+    align-items: baseline;
+    padding: 8px 14px;
+    border: 1px solid var(--color-kumo-line);
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--color-kumo-default);
+    font-size: 14px;
+  }
+  a:hover { background: var(--color-kumo-recessed); }
+  .n { color: var(--color-kumo-subtle); font-size: 12px; }
+</style>

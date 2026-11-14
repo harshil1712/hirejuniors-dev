@@ -141,14 +141,14 @@ export const Web = Cloudflare.Website.Vite(
 
 export type WorkerEnv = Cloudflare.InferEnv<typeof Web>;
 
-// Static marketing site on the apex; www 301s to apex. Prod only for the
-// custom domain — previews run under preview URLs.
+// Public job board on the apex (SSR over shared D1); www 301s to apex. Prod
+// only for the custom domain — previews run under preview URLs.
 export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
   name: PREVIEW_NAME ? undefined : `${PROJECT.name}-site`,
   // Absolute: the dev child spawns with cwd=rootDir; a relative path would
   // resolve twice (apps/site/apps/site) and astro loses src/pages.
   rootDir: fileURLToPath(new URL("./apps/site", import.meta.url)),
-  // static site: no Astro sessions, so no auto-provisioned KV namespace
+  // no Astro sessions, so no auto-provisioned KV namespace
   sessionKVBindingName: false,
   domain:
     isProd && !PREVIEW_NAME
@@ -158,6 +158,8 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
   dev: { port: 1337, strictPort: true },
   env: {
     PUBLIC_APP_URL: isProd ? `https://${APP_DOMAIN}` : "http://localhost:1338",
+    // Server-rendered job board reads the shared D1 (active listings only).
+    DB,
   },
 });
 

@@ -5,7 +5,10 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const DIST = new URL("../dist/", import.meta.url).pathname;
+// Adapter builds put prerendered assets under dist/client; plain static
+// builds use dist/ directly.
+const _root = new URL("../dist/", import.meta.url).pathname;
+const DIST = existsSync(join(_root, "client")) ? join(_root, "client") : _root;
 const failures: string[] = [];
 const fail = (file: string, msg: string) => failures.push(`${file}: ${msg}`);
 
@@ -32,6 +35,10 @@ const emitted = new Set(
   ),
 );
 emitted.add("/");
+
+// Routes rendered on demand by the site worker (per docs/specs/site.md) —
+// they emit no dist files, so link/emission checks must not expect them.
+const SSR_PREFIXES = ["/jobs", "/job/", "/companies", "/sitemap-jobs.xml", "/llms"];
 
 const titles = new Map<string, string[]>();
 const descs = new Map<string, string[]>();
@@ -66,10 +73,12 @@ for (const f of htmlFiles) {
     }
   }
 
-  // internal links → emitted paths
+  // internal links → emitted paths; SSR-prefixed routes (job board) emit
+  // no files — they resolve at request time, not build time.
   for (const m of html.matchAll(/href="(\/[^"#]*)"/g)) {
     const path = m[1];
     if (path.startsWith("//") || /\.(svg|png|css|js|woff2?|txt|xml|ico)$/.test(path)) continue;
+    if (SSR_PREFIXES.some((p) => path === p || path.startsWith(p))) continue;
     const norm = path.endsWith("/") ? path : path + "/";
     if (!emitted.has(norm) && !emitted.has(path)) fail(r, `internal link to missing path ${path}`);
   }
@@ -81,15 +90,9 @@ for (const [t, files] of titles)
 for (const [d, files] of descs)
   if (files.length > 1) fail(files.join(", "), `duplicate description "${d.slice(0, 60)}…"`);
 
-// required files
-for (const req of [
-  "rss.xml",
-  "llms.txt",
-  "llms-full.txt",
-  "sitemap-index.xml",
-  "robots.txt",
-  "blog/index.html",
-])
+// required files — /jobs/, /job/*, /companies*, /sitemap-jobs.xml,
+// /jobs/rss.xml, /llms*.txt are SSR endpoints (worker-emitted, not in dist).
+for (const req of ["rss.xml", "sitemap-index.xml", "robots.txt", "blog/index.html"])
   if (!existsSync(join(DIST, req))) fail(req, "required file missing from dist");
 
 // sitemap: every published post URL must carry <lastmod>
@@ -102,11 +105,13 @@ if (sitemapFile) {
     }
   }
 }
-// Organization logo URL must resolve to a real asset
-const home = read(join(DIST, "index.html"));
-const logoUrl = home.match(/"logo":\s*"[^"]*\/([^/"]+)"/)?.[1];
+// Organization logo URL must resolve to a real asset — checked on a
+// prerendered page (home is SSR; every page shares the same @graph org).
+const orgPage = join(DIST, "privacy", "index.html");
+const orgHtml = existsSync(orgPage) ? read(orgPage) : "";
+const logoUrl = orgHtml.match(/"logo":\s*"[^"]*\/([^/"]+)"/)?.[1];
 if (logoUrl && !existsSync(join(DIST, logoUrl)))
-  fail("index.html", `Organization logo ${logoUrl} missing from dist`);
+  fail("privacy/index.html", `Organization logo ${logoUrl} missing from dist`);
 
 // drafts must not appear anywhere
 const drafts = readdirSync(join(new URL("../src/content/blog/", import.meta.url).pathname))

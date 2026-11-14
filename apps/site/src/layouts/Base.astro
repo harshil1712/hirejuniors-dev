@@ -9,6 +9,8 @@ export interface Props {
   publishedTime?: Date;
   modifiedTime?: Date;
   tags?: string[];
+  /** e.g. "noindex,follow" for filtered/retired pages. */
+  robots?: string;
   /** Extra JSON-LD entities merged into the page's single @graph. */
   jsonLdEntities?: object[];
 }
@@ -25,6 +27,7 @@ const {
   publishedTime,
   modifiedTime,
   tags = [],
+  robots,
   jsonLdEntities = [],
 } = Astro.props;
 
@@ -58,6 +61,7 @@ const jsonLd = {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {robots && <meta name="robots" content={robots} />}
     <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.svg" />
     <link rel="alternate" type="application/rss+xml" title={PROJECT.productName} href="/rss.xml" />

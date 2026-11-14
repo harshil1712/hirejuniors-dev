@@ -1,66 +1,58 @@
 ---
+export const prerender = true;
 import PageLayout from "../components/PageLayout.astro";
 import { formatDate, isoDate } from "../lib/format";
 import { PROJECT } from "#project";
 
 /** Change this when the policy text below changes. */
-const LAST_UPDATED = new Date("2026-10-30");
+const LAST_UPDATED = new Date("2026-11-14");
 ---
-<PageLayout title={`Privacy · ${PROJECT.productName}`} description={`How ${PROJECT.productName} handles your data.`}>
+<PageLayout title={`Privacy · ${PROJECT.productName}`} description={`How ${PROJECT.productName} handles data.`}>
   <h1 class="font-display">Privacy</h1>
   <p class="updated">Last updated <time datetime={isoDate(LAST_UPDATED)}>{formatDate(LAST_UPDATED)}</time></p>
   <div class="sections">
     <section>
+      <h2>What this site is</h2>
+      <p>
+        {PROJECT.productName} is a public job board for junior roles, internships,
+        apprenticeships and graduate positions. There are no public accounts —
+        you can read every listing without signing in.
+      </p>
+    </section>
+    <section>
       <h2>What we store</h2>
       <p>
-        Your account details (name, email, password hash) and whatever data the app
-        creates for you. Nothing else is collected on purpose.
+        Job listings collected from public company job boards: the role title,
+        company, location, description and a link to the company's application
+        page. Nothing about the people who browse the board is stored on
+        purpose.
       </p>
-    <p class="subtle" style="margin-top:24px">Sessions use a signed cookie; sign-up and reset flows are protected by Cloudflare Turnstile.</p></section>
+      <p>
+        The admin dashboard at app.{PROJECT.domain} is for the site owner only.
+        Its account data (email, password hash, session) is separate from this
+        site and is never public.
+      </p>
+    </section>
     <section>
       <h2>What we don't do</h2>
       <p>
         No advertising trackers, no selling data, no third-party analytics beyond
-        privacy-preserving server metrics.
+        privacy-preserving server metrics, and no accounts to leak.
       </p>
     </section>
     <section>
-      <h2>Deleting your data</h2>
+      <h2>Requests</h2>
       <p>
-        Delete your account any time in Settings → Delete account — it removes the account and its data immediately. For other requests, email <a href={`mailto:${PROJECT.supportEmail}`}>{PROJECT.supportEmail}</a>. Sessions use a signed cookie; sign-up and reset flows are protected by Cloudflare Turnstile.
+        To correct or remove a listing, email
+        <a href={`mailto:${PROJECT.supportEmail}`}>{PROJECT.supportEmail}</a>.
       </p>
     </section>
   </div>
 </PageLayout>
 <style>
-  h1 {
-    font-size: 32px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  .updated {
-    margin-top: 8px;
-    font-size: 14px;
-    color: var(--color-kumo-subtle);
-  }
-  .sections {
-    margin-top: 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    font-size: 15px;
-  }
-  h2 {
-    font-size: 17px;
-    font-weight: 600;
-  }
-  p {
-    margin-top: 6px;
-    color: var(--color-kumo-subtle);
-    max-width: 65ch;
-  }
-  a {
-    color: var(--color-kumo-default);
-    text-decoration: underline;
-  }
+  h1 { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
+  .updated { color: var(--color-kumo-subtle); font-size: 14px; }
+  .sections { display: grid; gap: 24px; margin-top: 24px; }
+  h2 { font-size: 19px; margin: 0 0 8px; }
+  p { color: var(--color-kumo-subtle); line-height: 1.65; margin: 0 0 8px; }
 </style>
