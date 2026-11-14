@@ -61,10 +61,6 @@ for (const f of htmlFiles) {
     try {
       const parsed = JSON.parse(m[1]);
       const types = JSON.stringify(parsed);
-      if (r.startsWith("blog/") && r !== "blog/index.html" && !r.includes("tags")) {
-        if (!types.includes('"BlogPosting"')) fail(r, "post missing BlogPosting JSON-LD");
-        if (!types.includes('"BreadcrumbList"')) fail(r, "post missing BreadcrumbList JSON-LD");
-      }
       // h2 may carry Astro's scoped-style attribute (data-astro-cid-*)
       if (/<section[^>]*>\s*<h2[^>]*>FAQ<\/h2>/.test(html) && !types.includes('"FAQPage"'))
         fail(r, "has FAQ section but no FAQPage JSON-LD");
@@ -92,19 +88,9 @@ for (const [d, files] of descs)
 
 // required files — /jobs/, /job/*, /companies*, /sitemap-jobs.xml,
 // /jobs/rss.xml, /llms*.txt are SSR endpoints (worker-emitted, not in dist).
-for (const req of ["rss.xml", "sitemap-index.xml", "robots.txt", "blog/index.html"])
+for (const req of ["sitemap-index.xml", "robots.txt"])
   if (!existsSync(join(DIST, req))) fail(req, "required file missing from dist");
 
-// sitemap: every published post URL must carry <lastmod>
-const sitemapFile = files.find((f) => /sitemap-\d+\.xml$/.test(f));
-if (sitemapFile) {
-  const sm = read(sitemapFile);
-  for (const m of sm.matchAll(/<url>[\s\S]*?<\/url>/g)) {
-    if (/blog\/[a-z0-9-]+\//.test(m[0]) && !m[0].includes("/tags/") && !/<lastmod>/.test(m[0])) {
-      fail("sitemap", `post URL missing <lastmod>: ${m[0].match(/<loc>([^<]*)/)?.[1]}`);
-    }
-  }
-}
 // Organization logo URL must resolve to a real asset — checked on a
 // prerendered page (home is SSR; every page shares the same @graph org).
 const orgPage = join(DIST, "privacy", "index.html");
@@ -112,23 +98,6 @@ const orgHtml = existsSync(orgPage) ? read(orgPage) : "";
 const logoUrl = orgHtml.match(/"logo":\s*"[^"]*\/([^/"]+)"/)?.[1];
 if (logoUrl && !existsSync(join(DIST, logoUrl)))
   fail("privacy/index.html", `Organization logo ${logoUrl} missing from dist`);
-
-// drafts must not appear anywhere
-const drafts = readdirSync(join(new URL("../src/content/blog/", import.meta.url).pathname))
-  .filter((f) => f.endsWith(".md"))
-  .filter((f) =>
-    /^draft:\s*true/m.test(
-      readFileSync(join(new URL("../src/content/blog/", import.meta.url).pathname, f), "utf8"),
-    ),
-  )
-  .map((f) => f.slice(0, -3));
-if (drafts.length) {
-  for (const f of files) {
-    if (["sitemap-index.xml", "sitemap-0.xml"].includes(rel(f)) && !read(f).includes("blog"))
-      continue;
-    for (const d of drafts) if (read(f).includes(d)) fail(rel(f), `contains draft slug "${d}"`);
-  }
-}
 
 if (failures.length) {
   console.error(`check-dist: ${failures.length} failure(s)`);

@@ -8,14 +8,13 @@ retired jobs drop out cleanly, and answer engines get compact text views.
 ## Rendering
 
 - Job data pages render on request. Everything that doesn't read D1 stays
-  prerendered (`export const prerender = true`): blog, blog tags, privacy, 404,
-  blog RSS.
+  prerendered (`export const prerender = true`): privacy, 404.
 - SSR responses: `Cache-Control: public, max-age=300, s-maxage=3600,
   stale-while-revalidate=86400`; 404/410: `public, max-age=300`.
 - Only `status = 'active'` jobs are listed anywhere. Queries live in
   `packages/db/src/queries.ts` (public read helpers), not in pages.
 - No sign-in/sign-up CTAs — the public site has no accounts. Nav: Jobs,
-  Companies, Blog.
+  Companies.
 
 ## Routes
 
@@ -88,7 +87,7 @@ lists the SSR sitemap. `robots.txt` keeps pointing at `sitemap-index.xml`.
 ## AEO
 
 - `/llms.txt`: one-paragraph description of Hire Juniors, then sections for the
-  hubs (with live counts), companies (with counts), and blog posts.
+  hubs (with live counts) and companies (with counts).
 - `/llms-full.txt`: the above plus every active job as
   `- [{title} — {company}]({url}): {level} · {location} · posted {date}`.
 - Home FAQ answers the questions people actually ask (what counts as a junior

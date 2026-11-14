@@ -5,10 +5,10 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 ## Repo map
 
 - `apps/web` — app.<domain> (React/TanStack Router file routes/Kumo SPA + Hono worker in `worker/`, D1 via Drizzle, Better Auth with email verification + Turnstile + admin plugin).
-- `apps/site` — <domain> apex (Astro, server-rendered job board over the shared D1 + prerendered blog; spec `docs/specs/site.md`). `packages/brand` — logo, tokens, fonts (shared by both apps).
+- `apps/site` — <domain> apex (Astro, server-rendered job board over the shared D1; spec `docs/specs/site.md`). `packages/brand` — logo, tokens, fonts (shared by both apps).
 - `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
-- Blog posts are Markdown in git: `apps/site/src/content/blog/*.md` — schema in `src/content.config.ts`, write via the `write-post` skill; SEO gate is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
+- SEO gate for the site is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
 - Adding a resource to the app (schema → API → MCP → UI) — follow the `add-resource` skill; it walks the Sources resource end to end.
 - `scripts/init.ts` — renames the starter (package scope, worker names, domains, product name). `scripts/cf-token-preflight.sh` — deploy-token check.
 - `apps/web` agent access — one service layer (`worker/services/*`) behind three surfaces: session `/api/{jobs,companies,sources,runs}`, key-gated `/api/v1` + its OpenAPI doc, and MCP at `/mcp` (`worker/mcp.ts`). All resource routes require the admin role (`principal.isAdmin`). Shared zod schemas live in `worker/api/schemas.ts`; principal/scopes in `worker/middleware/principal.ts`. Agent spec: `docs/specs/agent-api.md`; registry entry: `server.json`.
@@ -38,17 +38,17 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 | Motion/interaction          | `emil-design-eng` (vendored, MIT; repo note at top: no Framer Motion — CSS/WAAPI only)                                                                 |
 | Design review/polish        | `impeccable` (+ `npx impeccable detect`)                                                                                                               |
 | Accessibility               | `accesslint` set (not vendored — `npx skills add accesslint/skills`) else web-design-guidelines a11y rules (`npx skills add vercel-labs/agent-skills`) |
-| Site/blog/UI copy           | `copywriting`, `copy-editing`; blog posts → `write-post`                                                                                               |
+| Site/UI copy                | `copywriting`, `copy-editing`                                                                                                                          |
 | Before any UI PR            | `verify-ui`                                                                                                                                            |
 
-**Precedence:** project skills (`kumo-ui`, `brand-tokens`, `write-post`, `verify-ui`) and this file beat vendored skills on any conflict — e.g. a vendored skill suggesting `dark:` classes, raw palette colors, new fonts or a new UI library is wrong here.
+**Precedence:** project skills (`kumo-ui`, `brand-tokens`, `verify-ui`) and this file beat vendored skills on any conflict — e.g. a vendored skill suggesting `dark:` classes, raw palette colors, new fonts or a new UI library is wrong here.
 
 `accesslint/skills` and `web-design-guidelines` are **not** vendored (no redistribution license found upstream) — install them on demand with the commands above.
 
 ## Decisions — don't re-propose
 
 - **SPA, not SSR.** The app is a Vite single-page app; the worker serves assets + `/api/*` (`runWorkerFirst`). No TanStack Start, no server rendering.
-- **Astro for the public job board** (`apps/site`), server output (job pages read D1 per request; blog/privacy prerendered), separate worker on the apex. `astro.local.config.mjs` adds the adapter for local builds; Alchemy injects it on deploy.
+- **Astro for the public job board** (`apps/site`), server output (job pages read D1 per request; privacy/404 prerendered), separate worker on the apex. `astro.local.config.mjs` adds the adapter for local builds; Alchemy injects it on deploy.
 - **Alchemy v2** (Effect style) owns all infra — no wrangler config files for deploy, no Terraform.
 - **Kumo UI** (`@cloudflare/kumo`) + Phosphor icons + Tailwind 4. No other component library.
 - **Workers Observability** (logs + traces) — no Sentry, no external APM.

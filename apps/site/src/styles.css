@@ -63,7 +63,7 @@ a {
   background: var(--color-kumo-recessed);
 }
 
-/* blog prose (markdown output can't carry scoped styles) */
+/* prose — job descriptions and privacy copy (not scoped) */
 .prose {
   font-size: 16px;
   line-height: 1.75;

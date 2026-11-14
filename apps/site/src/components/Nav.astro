@@ -5,7 +5,6 @@ const path = Astro.url.pathname;
 const links = [
   { href: "/jobs/", label: "Jobs", match: (p: string) => p.startsWith("/job") },
   { href: "/companies/", label: "Companies", match: (p: string) => p.startsWith("/companies") },
-  { href: "/blog/", label: "Blog", match: (p: string) => p.startsWith("/blog") },
 ];
 ---
 <header class="wrap nav">

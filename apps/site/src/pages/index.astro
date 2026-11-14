@@ -3,23 +3,20 @@ export const prerender = false;
 import PageLayout from "../components/PageLayout.astro";
 import JobList from "../components/JobList.astro";
 import HubLinks from "../components/HubLinks.astro";
-import PostList from "../components/PostList.astro";
 import { PROJECT } from "#project";
 import { siteDb } from "../lib/site-db";
 import {
   listActiveJobs, countActiveJobs, levelCounts, countryCounts,
 } from "@hirejuniors/db/queries";
 import { breadcrumbs, itemList, cacheHeaders, CACHE_OK } from "../lib/ssr";
-import { getPublishedPosts } from "../lib/posts";
 
 cacheHeaders(Astro, CACHE_OK);
 const db = siteDb();
-const [total, jobs, levels, countries, latest] = await Promise.all([
+const [total, jobs, levels, countries] = await Promise.all([
   countActiveJobs(db),
   listActiveJobs(db, {}, { limit: 12 }),
   levelCounts(db),
   countryCounts(db),
-  getPublishedPosts(),
 ]);
 const levelMap = Object.fromEntries(levels.map((r) => [r.level, r.n]));
 const countryList = countries
@@ -102,12 +99,6 @@ const jsonLd = [
     ))}
   </section>
 
-  {latest.length > 0 && (
-    <section class="latest">
-      <div class="sect"><h2 class="font-display">From the blog</h2><a href="/blog/">All posts →</a></div>
-      <PostList posts={latest.slice(0, 3)} size="compact" headingLevel={3} showTags={false} />
-    </section>
-  )}
 </PageLayout>
 <style>
   .hero {

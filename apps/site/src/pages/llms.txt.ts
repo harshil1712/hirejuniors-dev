@@ -1,6 +1,5 @@
 // AEO summary — live counts, SSR.
 import type { APIContext } from "astro";
-import { getPublishedPosts } from "../lib/posts";
 import { siteDb } from "../lib/site-db";
 import {
   countActiveJobs,
@@ -16,12 +15,11 @@ import { PROJECT } from "#project";
 export async function GET(_context: APIContext) {
   const db = siteDb();
   const origin = `https://${PROJECT.domain}`;
-  const [total, levels, countries, companies, posts] = await Promise.all([
+  const [total, levels, countries, companies] = await Promise.all([
     countActiveJobs(db),
     levelCounts(db),
     countryCounts(db),
     companiesWithActiveJobs(db),
-    getPublishedPosts(),
   ]);
   const summary =
     `${PROJECT.productName} is a public job board for people starting their careers. ` +
@@ -40,7 +38,6 @@ export async function GET(_context: APIContext) {
     `- [All jobs](${origin}/jobs/): every open role, newest first.`,
     `- [Companies](${origin}/companies/): companies with open junior roles.`,
     `- [Privacy](${origin}/privacy): what the site stores (no public accounts).`,
-    `- [Blog](${origin}/blog/): notes from the ${PROJECT.productName} team.`,
     `- [Jobs RSS](${origin}/jobs/rss.xml): latest 50 roles.`,
     `- [Job sitemap](${origin}/sitemap-jobs.xml): every active job URL.`,
     "",
@@ -61,9 +58,6 @@ export async function GET(_context: APIContext) {
       (c) =>
         `- [${c.company.name}](${origin}/companies/${c.company.slug}/): ${c.activeCount} open roles.`,
     ),
-    "",
-    "## Blog",
-    ...posts.map((p) => `- [${p.data.title}](${origin}/blog/${p.id}/): ${p.data.description}`),
     "",
   ];
   return new Response(lines.join("\n"), {
