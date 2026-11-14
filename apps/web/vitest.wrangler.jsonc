@@ -8,7 +8,7 @@
       "binding": "DB",
       "database_name": "test-db",
       "database_id": "test-db",
-      "migrations_dir": "migrations",
+      "migrations_dir": "../../packages/db/migrations",
     },
   ],
   "ratelimits": [

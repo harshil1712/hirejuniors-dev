@@ -6,6 +6,8 @@ Hire Juniors is a reusable starter for full-stack Cloudflare apps: a Vite/React 
 
 - `apps/web` — app.<domain> (React/TanStack Router file routes/Kumo SPA + Hono worker in `worker/`, D1 via Drizzle, Better Auth with email verification + Turnstile + admin plugin).
 - `apps/site` — <domain> apex (Astro, static marketing + blog). `packages/brand` — logo, tokens, fonts (shared by both apps).
+- `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
+- `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
 - Blog posts are Markdown in git: `apps/site/src/content/blog/*.md` — schema in `src/content.config.ts`, write via the `write-post` skill; SEO gate is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
 - Adding a resource to the app (schema → API → MCP → UI) — follow the `add-resource` skill; it walks the Projects resource end to end.
 - `scripts/init.ts` — renames the starter (package scope, worker names, domains, product name). `scripts/cf-token-preflight.sh` — deploy-token check.
@@ -22,7 +24,7 @@ Hire Juniors is a reusable starter for full-stack Cloudflare apps: a Vite/React 
 3. **Secrets.** Never commit, log or print secrets. Ask the human for new ones.
 4. **Verification before done** (see the skills): `vp check` → `vp run -r test` → `vp run -r build`; UI changes need screenshots (`verify-ui`). Never claim a check passed without running it in this session.
 5. **No hook bypass.** Never `--no-verify`, never force-push `main`, never rewrite published history.
-6. **Database.** Drizzle ORM only, never raw SQL. Schema in `apps/web/schema/db.ts` + generated `src/auth-schema.ts`; migrations in `apps/web/migrations` are hand-maintained SQL for now (`drizzle-kit generate` is broken with the pinned versions — see `apps/web/migrations/README.md`).
+6. **Database.** Drizzle ORM only, never raw SQL. Schema in `apps/web/schema/db.ts` (re-exports `@hirejuniors/db/schema`) + generated `src/auth-schema.ts` + `packages/db/src/schema.ts`; migrations in `packages/db/migrations` are hand-maintained SQL for now (`drizzle-kit generate` is broken with the pinned versions — see `packages/db/migrations/README.md`).
 7. **Local dev.** `vp run dev` (`alchemy dev`) needs `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` in env (env credentials take precedence over any alchemy profile); without `alchemy login`, use `CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1)` and the account id from `npx wrangler whoami`. Alchemy binds dev ports dynamically; point `BETTER_AUTH_URL` at the web URL it prints. Verification/reset mail lands in `.alchemy/local/email/`.
 8. **Clean up after yourself.** Before reporting done: stop dev servers/browsers you started, delete Worker Previews and temporary branches you created, remove scratch files/debug logging/unused code, leave `git status` clean. Follow `cleanup`.
 

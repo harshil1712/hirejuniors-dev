@@ -19,6 +19,7 @@
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource/pixelify-sans": "5.3.0",
     "@hirejuniors/brand": "workspace:*",
+    "@hirejuniors/db": "workspace:*",
     "@hono/zod-openapi": "1.6.3",
     "@modelcontextprotocol/server": "2.3.1",
     "@phosphor-icons/react": "2.1.10",

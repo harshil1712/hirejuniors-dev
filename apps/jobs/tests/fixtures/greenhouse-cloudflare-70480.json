@@ -1,0 +1,233 @@
+{
+  "id": 70480,
+  "name": "University",
+  "parent_id": null,
+  "child_ids": [],
+  "jobs": [
+    {
+      "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/8199958?gh_jid=8199958",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3548909,
+      "location": {
+        "name": "In-Office"
+      },
+      "metadata": [
+        {
+          "id": 825338,
+          "name": "Cost Center",
+          "value": "4991 - R&D Interns",
+          "value_type": "single_select"
+        },
+        {
+          "id": 8654220,
+          "name": "Job Posting Location",
+          "value": ["Austin, US"],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 46546702,
+          "name": "Career Site Department",
+          "value": ["Early Talent"],
+          "value_type": "multi_select"
+        }
+      ],
+      "id": 8199958,
+      "updated_at": "2026-11-09T19:03:42-05:00",
+      "requisition_id": null,
+      "title": "Software Engineer Intern (2027) - Austin, TX",
+      "company_name": "Cloudflare",
+      "first_published": "2026-09-16T21:57:53-04:00",
+      "language": "en",
+      "application_deadline": null
+    },
+    {
+      "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/8245197?gh_jid=8245197",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3567436,
+      "location": {
+        "name": "In-Office"
+      },
+      "metadata": [
+        {
+          "id": 825338,
+          "name": "Cost Center",
+          "value": "4991 - R&D Interns",
+          "value_type": "single_select"
+        },
+        {
+          "id": 8654220,
+          "name": "Job Posting Location",
+          "value": ["Lisbon, Portugal"],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 46546702,
+          "name": "Career Site Department",
+          "value": ["Early Talent"],
+          "value_type": "multi_select"
+        }
+      ],
+      "id": 8245197,
+      "updated_at": "2026-11-09T19:03:42-05:00",
+      "requisition_id": null,
+      "title": "Software Engineer Intern (2027)",
+      "company_name": "Cloudflare",
+      "first_published": "2026-10-05T22:42:06-04:00",
+      "language": "en",
+      "application_deadline": null
+    },
+    {
+      "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/8245211?gh_jid=8245211",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3567443,
+      "location": {
+        "name": "In-Office"
+      },
+      "metadata": [
+        {
+          "id": 825338,
+          "name": "Cost Center",
+          "value": "4991 - R&D Interns",
+          "value_type": "single_select"
+        },
+        {
+          "id": 8654220,
+          "name": "Job Posting Location",
+          "value": ["London, UK"],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 46546702,
+          "name": "Career Site Department",
+          "value": ["Early Talent"],
+          "value_type": "multi_select"
+        }
+      ],
+      "id": 8245211,
+      "updated_at": "2026-11-09T19:03:42-05:00",
+      "requisition_id": null,
+      "title": "Software Engineer Intern (2027) - London, UK",
+      "company_name": "Cloudflare",
+      "first_published": "2026-10-05T22:40:05-04:00",
+      "language": "en",
+      "application_deadline": null
+    },
+    {
+      "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/8274790?gh_jid=8274790",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3580130,
+      "location": {
+        "name": "In-Office"
+      },
+      "metadata": [
+        {
+          "id": 825338,
+          "name": "Cost Center",
+          "value": "4991 - R&D Interns",
+          "value_type": "single_select"
+        },
+        {
+          "id": 8654220,
+          "name": "Job Posting Location",
+          "value": ["Austin, US"],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 46546702,
+          "name": "Career Site Department",
+          "value": ["Early Talent"],
+          "value_type": "multi_select"
+        }
+      ],
+      "id": 8274790,
+      "updated_at": "2026-11-09T19:03:42-05:00",
+      "requisition_id": "1009",
+      "title": "Product Manager Intern (2027) - Austin, TX",
+      "company_name": "Cloudflare",
+      "first_published": "2026-10-29T11:41:37-04:00",
+      "language": "en",
+      "application_deadline": null
+    },
+    {
+      "absolute_url": "https://boards.greenhouse.io/cloudflare/jobs/8328914?gh_jid=8328914",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3600267,
+      "location": {
+        "name": "In-Office"
+      },
+      "metadata": [
+        {
+          "id": 825338,
+          "name": "Cost Center",
+          "value": "4991 - R&D Interns",
+          "value_type": "single_select"
+        },
+        {
+          "id": 8654220,
+          "name": "Job Posting Location",
+          "value": ["London, UK"],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 46546702,
+          "name": "Career Site Department",
+          "value": ["Early Talent"],
+          "value_type": "multi_select"
+        }
+      ],
+      "id": 8328914,
+      "updated_at": "2026-11-09T19:03:42-05:00",
+      "requisition_id": "1018",
+      "title": "Product Manager Intern (2027) - London, UK",
+      "company_name": "Cloudflare",
+      "first_published": "2026-10-29T11:42:31-04:00",
+      "language": "en",
+      "application_deadline": null
+    }
+  ]
+}

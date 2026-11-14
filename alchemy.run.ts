@@ -21,7 +21,7 @@ const DB = Cloudflare.D1.Database(
     const stage = yield* Alchemy.Stage;
     return {
       name: `${PROJECT.name}-db-${sanitizeStage(stage)}`,
-      migrations: "./apps/web/migrations",
+      migrations: "./packages/db/migrations",
     };
   }),
 );
@@ -145,12 +145,36 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
   },
 });
 
+// Ingest worker hosting IngestWorkflow (docs/specs/ingest.md). Not created
+// for Worker Previews — Cloudflare rejects Workflow classes on preview
+// versions, so the whole worker is skipped when PR_NAME is set.
+export const Jobs = PREVIEW_NAME
+  ? null
+  : Cloudflare.Worker(`${PROJECT.name}-jobs`, {
+      name: `${PROJECT.name}-jobs`,
+      main: "./apps/jobs/src/index.ts",
+      compatibility: { date: "2026-10-01" },
+      observability: {
+        enabled: true,
+        logs: { enabled: true, invocationLogs: true },
+        traces: { enabled: true, headSamplingRate: 1 },
+      },
+      env: {
+        DB,
+        INGEST_WORKFLOW: Cloudflare.Workflow("IngestWorkflow", {
+          className: "IngestWorkflow",
+          schedules: ["0 6 * * 1"],
+        }),
+      },
+    });
+
 export default Alchemy.Stack(
   PROJECT.name,
   { providers: Cloudflare.providers(), state: Cloudflare.state() },
   Effect.gen(function* () {
     const web = yield* Web;
     const site = yield* Site;
-    return { url: web.url, siteUrl: site.url };
+    const jobs = Jobs ? yield* Jobs : null;
+    return { url: web.url, siteUrl: site.url, jobsUrl: jobs?.url };
   }),
 );

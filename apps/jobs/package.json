@@ -1,0 +1,25 @@
+{
+  "name": "@hirejuniors/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vp test",
+    "check": "vp check",
+    "format": "vp check --fix"
+  },
+  "dependencies": {
+    "@hirejuniors/db": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "nanoid": "6.0.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.7",
+    "@cloudflare/workers-types": "5.20261023.1",
+    "typescript": "7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  }
+}
