@@ -1,5 +1,5 @@
 /**
- * SEO regression check over dist/. Fails loudly so agent-written posts can't
+ * SEO regression check over dist/. Fails loudly so page changes can't
  * silently break SEO. Run via `astro build && vpx scripts/check-dist.ts`.
  */
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
