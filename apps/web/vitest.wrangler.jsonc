@@ -1,0 +1,31 @@
+{
+  "name": "hirejuniors-web-test",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "test-db",
+      "database_id": "test-db",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    // Low limit so the 429 test is cheap — other tests use a fresh key each
+    // and stay well under 20 keyed requests.
+    { "name": "API_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } },
+  ],
+  "vars": {
+    "BETTER_AUTH_SECRET": "test-secret-at-least-32-characters-long!",
+    "BETTER_AUTH_URL": "http://localhost:8787",
+    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_CLIENT_SECRET": "",
+    "OWNER_ADMIN_EMAIL": "owner@example.com",
+    // Cloudflare's always-pass Turnstile test pair — siteverify succeeds for
+    // any token, so sign-up tests need no real widget.
+    "TURNSTILE_SECRET_KEY": "1x0000000000000000000000000000000AA",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+  },
+}

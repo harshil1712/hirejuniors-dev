@@ -10,64 +10,51 @@ We love when people contribute to the project. Refer to the [CONTRIBUTING.md](./
 
 ## Built With 💪
 
-- React Router
-- Cloudflare Workers
-- Cloudflare D1
-- Cloudflare Workflows
-- Drizzle ORM
+- React SPA (Vite + TanStack Router + Kumo UI) on Cloudflare Workers
+- Hono API worker — Better Auth, D1 via Drizzle ORM, Turnstile
+- Astro static marketing site
+- Alchemy IaC (one stack for D1, workers, domains, previews)
 
 ## Getting Started
 
 ### Installation
 
-Install the dependencies:
-
-```bash
-npm install
+```sh
+vp install
+cp .env.example .env        # fill in BETTER_AUTH_SECRET at minimum
 ```
 
 ### Development
 
-Run an initial database migration:
+`alchemy dev` needs Cloudflare credentials in env (it picks them up before
+any profile). Either `alchemy login` once, or reuse wrangler's OAuth:
 
 ```bash
-npm run db:migrate
+# account id: the "Account ID" column of `npx wrangler whoami`
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
+  CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1) \
+  vp run dev
 ```
 
-Start the development server with HMR:
+Start the dev servers:
 
-```bash
-npm run dev
+```sh
+vp run dev          # app on http://localhost:1338 (emails land in .alchemy/local/email as .eml)
+vp run dev:site     # marketing site on http://localhost:1337
 ```
 
-Your application will be available at `http://localhost:5173`.
+Sign up with any email; the verification email is written to `.alchemy/local/email/*.eml` — open it and click the link. Set `OWNER_ADMIN_EMAIL` to your email before signing up to get the admin area.
+
+`project.config.ts` is the single source for name/domain/product name — `alchemy.run.ts`, both apps and `scripts/init.ts` read it.
 
 ## Building for Production
 
-Create a production build:
-
-```bash
-npm run build
+```sh
+vp check           # format + oxlint (incl. anti-slop rules) + types
+vp run -r test     # worker tests (miniflare, real D1 — no mocks)
+vp run -r build    # web + site
 ```
 
 ## Deployment
 
-Deployment is done using the Wrangler CLI.
-
-To deploy directly to production:
-
-```sh
-npx wrangler deploy
-```
-
-To deploy a preview URL:
-
-```sh
-npx wrangler versions upload
-```
-
-You can then promote a version to production after verification or roll it out progressively.
-
-```sh
-npx wrangler versions deploy
-```
+Push to `main` deploys production via `.github/workflows/deploy.yml` (check → test → build → `alchemy deploy --stage prod` → smoke → auto-rollback). Every PR gets a Worker Preview deployment and a smoke check. Required secrets and the API-token permissions are in `docs/deploy.md`.

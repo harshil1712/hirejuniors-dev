@@ -1,14 +1,18 @@
-.DS_Store
-/node_modules/
+node_modules/
+dist/
+.wrangler/
+.alchemy/
+.vite-hooks/cache/
 *.tsbuildinfo
-.vscode/
-
-# React Router
-/.react-router/
-/dist/
-
-# Cloudflare
-.mf
-.wrangler
-.dev.vars
+data/
+checkpoints/
+models/**/artifacts/
+.venv/
+__pycache__/
 .env
+.DS_Store
+screenshots/
+playwright-report/
+test-results/
+apps/*/.astro/
+apps/site/dist/

@@ -1,0 +1,68 @@
+import type { Context } from "hono";
+import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
+import type { ZodError, ZodType } from "zod";
+import { ServiceError } from "../services/projects";
+
+export interface ErrorDetail {
+  path: string;
+  message: string;
+}
+
+/**
+ * The uniform error envelope from the agent-API spec (docs/specs/agent-api.md
+ * §5.2): `{ error: { code, message, requestId, details? } }` on every non-2xx.
+ */
+export function errorJson(
+  c: Context,
+  status: ClientErrorStatusCode | ServerErrorStatusCode,
+  code: string,
+  message: string,
+  details?: ErrorDetail[],
+) {
+  const error = { code, message, requestId: c.get("requestId"), details };
+  return c.json({ error }, status);
+}
+
+/** `{"application/json": { schema }}` for createRoute request/response
+ * content declarations. */
+export const json = <T extends ZodType>(schema: T) => ({
+  "application/json": { schema },
+});
+
+/**
+ * Shared router `onError`: ServiceError → its envelope status; anything else
+ * is logged (never echoed to clients) → 500 `internal`.
+ */
+export function onApiError(err: Error, c: Context) {
+  if (err instanceof ServiceError) {
+    return errorJson(c, err.code === "not_found" ? 404 : 400, err.code, err.message, err.details);
+  }
+  console.error(
+    JSON.stringify({
+      level: "error",
+      requestId: c.get("requestId"),
+      path: c.req.path,
+      method: c.req.method,
+      message: err.message,
+    }),
+  );
+  return errorJson(c, 500, "internal", "Something went wrong. Please try again.");
+}
+
+/**
+ * Shared OpenAPIHono `defaultHook`: zod failures become the 400
+ * `validation_failed` envelope, `details[].path` joined by ".".
+ */
+export const validationHook = (result: { success: boolean; error?: ZodError }, c: Context) => {
+  if (result.success || !result.error) return;
+  return errorJson(
+    c,
+    400,
+    "validation_failed",
+    "Request validation failed",
+    result.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      message: issue.message,
+    })),
+  );
+};
