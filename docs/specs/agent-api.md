@@ -19,20 +19,16 @@ Both surfaces run in the existing `apps/web` Worker and call one shared service 
 - Webhooks, idempotency keys, usage metering/billing, MCP registry publishing.
 - An AI chat feature.
 
-## 3. Demo resource: Projects
+## 3. Resources: jobs, companies, sources, runs
 
-The template needs one real resource for the API, the tools and the UI to act on. It is deliberately generic so buyers rename it to their own domain.
+The API and tools manage the ingest pipeline's data (schema: `docs/specs/ingest.md`, tables in `packages/db/src/schema.ts`):
 
-| Field       | Type            | Notes                                                |
-| ----------- | --------------- | ---------------------------------------------------- |
-| `id`        | string          | `prj_` + nanoid(16), server-generated                |
-| `name`      | string          | 1–80 chars, required                                 |
-| `status`    | enum            | `active` \| `paused` \| `archived`, default `active` |
-| `notes`     | string          | 0–2000 chars, default `""`                           |
-| `createdAt` | ISO 8601 string | server-set                                           |
-| `updatedAt` | ISO 8601 string | server-set                                           |
+- **Jobs** — ingested listings (`job_` ids). Read: list with filters (`status`, `level`, `country`, `companyId`, `sourceId`, `q`) + keyset pagination; get by id. Write: `PATCH` status (`active` ↔ `retired`; retire stamps `retire_reason: "manual"`, restore clears it).
+- **Companies** — job board owners (`cmp_` ids). Create (slug derived from name; duplicate slug → `409 conflict`), list, patch.
+- **Sources** — ingest sources (`src_` ids, unique `(platform, board)`). Create/patch (`enabled`, `includeAll`, `config`, `board`); `config` is validated by the platform adapter's `parseConfig` from `@hirejuniors/jobs`. `POST /sources/preview` dry-runs an adapter fetch (no writes) and returns `{fetched, kept, sample}`. No DELETE — disabling is the off switch.
+- **Runs** — ingest workflow runs (`run_` ids). List latest-first, get by id with per-source rows. `POST /runs` starts an `IngestWorkflow` instance (`trigger: "manual"`) → `202 {instanceId}`; `503 unavailable` when the workflow binding is absent (preview deploys).
 
-Storage: D1 table `project` (`id` PK, `owner_id` → `user.id` ON DELETE CASCADE, `name`, `status`, `notes`, `created_at`, `updated_at`; index on `(owner_id, updated_at DESC, id)`). Drizzle schema in `apps/web/schema/projects.ts`; hand-written migration `0002_projects.sql` (drizzle-kit generate is broken with the pinned versions, see `apps/web/migrations/README.md`).
+Every resource route — session `/api/*`, `/api/v1/*`, and MCP tools — additionally requires the principal's user to have `role: "admin"` (Better Auth admin plugin); non-admin → `403 forbidden`.
 
 ## 4. Authentication and authorization
 
@@ -47,12 +43,12 @@ Storage: D1 table `project` (`id` PK, `owner_id` → `user.id` ON DELETE CASCADE
 
 ### 4.2 Scopes
 
-| Scope            | Allows                                |
-| ---------------- | ------------------------------------- |
-| `projects:read`  | list, get                             |
-| `projects:write` | create, update, delete (implies read) |
+| Scope        | Allows                                                   |
+| ------------ | -------------------------------------------------------- |
+| `jobs:read`  | list/get jobs, companies, sources, runs                  |
+| `jobs:write` | all mutations incl. preview + trigger run (implies read) |
 
-Stored in the key's `permissions` as `{ "projects": ["read", "write"] }`. Checked per route/tool in one helper (`requireScope("projects", "write")`). A request without the needed scope gets `403 insufficient_scope`.
+Stored in the key's `permissions` as `{ "jobs": ["read", "write"] }`. Checked per route/tool in one helper (`requireScope("jobs", "write")`). A request without the needed scope gets `403 insufficient_scope`.
 
 ### 4.3 Request flow
 
@@ -60,8 +56,8 @@ Stored in the key's `permissions` as `{ "projects": ["read", "write"] }`. Checke
 Authorization: Bearer hj_…
   → middleware requireApiKey: auth.api.verifyApiKey({ key })   (exact API verified at implementation)
   → 401 if missing/invalid/expired/revoked
-  → c.set("principal", { userId, keyId, scopes })
-  → route / MCP tool → requireScope → services/projects.*(db, principal.userId, …)
+  → c.set("principal", { userId, keyId, scopes, isAdmin })
+  → route / MCP tool → requireScope + admin check → services/{jobs,companies,sources,runs}.*(db, …)
 ```
 
 Session cookies are **not** accepted on `/api/v1/*` or `/mcp`; the web app keeps using its own session routes. This keeps the public surface single-auth and CSRF-free.
@@ -76,21 +72,29 @@ Session cookies are **not** accepted on `/api/v1/*` or `/mcp`; the web app keeps
 
 ### 5.1 Endpoints
 
-| Method | Path                                      | Scope                                              | Result                                             |
-| ------ | ----------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
-| GET    | `/api/v1/me`                              | any valid key                                      | `{ data: { userId, email, name, keyId, scopes } }` |
-| GET    | `/api/v1/projects?limit=&cursor=&status=` | `projects:read`                                    | `{ data: Project[], nextCursor: string \| null }`  |
-| POST   | `/api/v1/projects`                        | `projects:write`                                   | `201 { data: Project }`                            |
-| GET    | `/api/v1/projects/{id}`                   | `projects:read`                                    | `{ data: Project }`                                |
-| PATCH  | `/api/v1/projects/{id}`                   | `projects:write`                                   | `{ data: Project }` (partial: name, status, notes) |
-| DELETE | `/api/v1/projects/{id}`                   | `projects:write`                                   | `204`                                              |
-| GET    | `/api/v1/openapi.json`                    | any valid key (public if `PROJECT.api.publicSpec`) | OpenAPI 3.1 document                               |
+| Method | Path                                     | Scope                                              | Result                                                      |
+| ------ | ---------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------- |
+| GET    | `/api/v1/me`                             | any valid key                                      | `{ data: { userId, email, name, keyId, scopes } }`          |
+| GET    | `/api/v1/jobs?status=&level=&country=&…` | `jobs:read`                                        | `{ data: Job[], nextCursor: string \| null }`               |
+| GET    | `/api/v1/jobs/{id}`                      | `jobs:read`                                        | `{ data: Job }`                                             |
+| PATCH  | `/api/v1/jobs/{id}`                      | `jobs:write`                                       | `{ data: Job }` (`{status: active\|retired}`)               |
+| GET    | `/api/v1/companies`                      | `jobs:read`                                        | `{ data: Company[] }`                                       |
+| POST   | `/api/v1/companies`                      | `jobs:write`                                       | `201 { data: Company }` (409 on duplicate slug)             |
+| PATCH  | `/api/v1/companies/{id}`                 | `jobs:write`                                       | `{ data: Company }`                                         |
+| GET    | `/api/v1/sources`                        | `jobs:read`                                        | `{ data: Source[] }` (company, last run, active job count)  |
+| POST   | `/api/v1/sources`                        | `jobs:write`                                       | `201 { data: Source }` (409 on duplicate platform+board)    |
+| PATCH  | `/api/v1/sources/{id}`                   | `jobs:write`                                       | `{ data: Source }`                                          |
+| POST   | `/api/v1/sources/preview`                | `jobs:write`                                       | `{ data: { fetched, kept, sample } }` (502 upstream_failed) |
+| GET    | `/api/v1/runs`                           | `jobs:read`                                        | `{ data: IngestRun[], nextCursor }`                         |
+| GET    | `/api/v1/runs/{id}`                      | `jobs:read`                                        | `{ data: IngestRun & { sourceRuns } }`                      |
+| POST   | `/api/v1/runs`                           | `jobs:write`                                       | `202 { data: { instanceId } }` (503 unavailable)            |
+| GET    | `/api/v1/openapi.json`                   | any valid key (public if `PROJECT.api.publicSpec`) | OpenAPI 3.1 document                                        |
 
 ### 5.2 Conventions
 
 - JSON only; `Content-Type: application/json` required on writes (`415` otherwise).
-- Pagination: cursor-based, opaque base64 cursor of `(updatedAt, id)`; `limit` 1–100, default 20; newest first.
-- Not found and not-yours both return `404 not_found` (no existence leaks).
+- Pagination: cursor-based, opaque base64url cursor of `(firstSeenAt, id)` for jobs and `(startedAt, id)` for runs; `limit` 1–100; newest first.
+- Unknown ids return `404 not_found`; duplicate unique keys return `409 conflict`.
 - Error envelope, every non-2xx:
 
 ```json
@@ -104,12 +108,12 @@ Session cookies are **not** accepted on `/api/v1/*` or `/mcp`; the web app keeps
 }
 ```
 
-Codes: `unauthorized` (401), `insufficient_scope` (403), `not_found` (404), `validation_failed` (400), `unsupported_media_type` (415), `rate_limited` (429), `internal` (500). `requestId` comes from the existing request-id middleware.
+Codes: `unauthorized` (401), `insufficient_scope` (403), `forbidden` (403, non-admin), `not_found` (404), `conflict` (409), `validation_failed` (400), `unsupported_media_type` (415), `rate_limited` (429), `upstream_failed` (502), `unavailable` (503), `internal` (500). `requestId` comes from the existing request-id middleware.
 
 ### 5.3 OpenAPI generation
 
 - `@hono/zod-openapi@1.6.3` (`OpenAPIHono`, `createRoute`); zod 4 is already in the repo.
-- Schemas live once in `worker/api/schemas.ts` (`Project`, `ProjectCreate`, `ProjectUpdate`, `ProjectList`, `Error`) and are reused by the MCP tools.
+- Schemas live once in `worker/api/schemas.ts` (`Job`, `JobUpdate`, `JobList`, `Company`, `CompanyCreate`, `CompanyUpdate`, `CompanyList`, `Source`, `SourceCreate`, `SourceUpdate`, `SourceList`, `SourcePreview`, `SourcePreviewResult`, `IngestRun`, `SourceRun`, `RunList`, `Error`) and are reused by the MCP tools.
 - `app.doc31("/api/v1/openapi.json", …)` with `info` from `project.config.ts`, `servers: [{ url: https://app.<domain> }]`, a `bearerAuth` security scheme (`type: http, scheme: bearer`), tags, and examples on every schema.
 - No docs UI is shipped; anyone with access can load the document into Scalar, Swagger UI or Postman. Better Auth's endpoints and the app's internal session routes are **never** in this document.
 - Visibility: by default the document requires a valid API key (no scope). `project.config.ts` `api: { publicSpec: boolean }` (default `false`) makes it public. Discovery entries (§9) are only published when `publicSpec` is true, so a private spec is never advertised.
@@ -126,14 +130,21 @@ Codes: `unauthorized` (401), `insufficient_scope` (403), `not_found` (404), `val
 
 All tools return `structuredContent` matching `outputSchema` plus a short text summary in `content`. Inputs reuse the zod schemas from §5.3. Errors return `isError: true` with the same `code`/`message` as the HTTP API.
 
-| Tool             | Scope | Input                                 | Output                                | Annotations                   |
-| ---------------- | ----- | ------------------------------------- | ------------------------------------- | ----------------------------- |
-| `whoami`         | any   | –                                     | `{ userId, email, name, scopes }`     | readOnly, idempotent          |
-| `list_projects`  | read  | `{ status?, limit? (≤100), cursor? }` | `{ projects: Project[], nextCursor }` | readOnly, idempotent          |
-| `get_project`    | read  | `{ id }`                              | `{ project }`                         | readOnly, idempotent          |
-| `create_project` | write | `{ name, status?, notes? }`           | `{ project }`                         | not readOnly, not destructive |
-| `update_project` | write | `{ id, name?, status?, notes? }`      | `{ project }`                         | idempotent, not destructive   |
-| `delete_project` | write | `{ id }`                              | `{ deleted: true, id }`               | destructive, idempotent       |
+| Tool             | Scope | Input                                                                       | Output                              | Annotations                   |
+| ---------------- | ----- | --------------------------------------------------------------------------- | ----------------------------------- | ----------------------------- |
+| `whoami`         | any   | –                                                                           | `{ userId, email, name, scopes }`   | readOnly, idempotent          |
+| `list_jobs`      | read  | `{ status?, level?, country?, companyId?, sourceId?, q?, limit?, cursor? }` | `{ jobs: Job[], nextCursor }`       | readOnly, idempotent          |
+| `get_job`        | read  | `{ id }`                                                                    | `{ job }`                           | readOnly, idempotent          |
+| `list_companies` | read  | –                                                                           | `{ companies: Company[] }`          | readOnly, idempotent          |
+| `list_sources`   | read  | –                                                                           | `{ sources: Source[] }`             | readOnly, idempotent          |
+| `list_runs`      | read  | `{ limit?, cursor? }`                                                       | `{ runs: IngestRun[], nextCursor }` | readOnly, idempotent          |
+| `get_run`        | read  | `{ id }`                                                                    | `{ run }` (with sourceRuns)         | readOnly, idempotent          |
+| `set_job_status` | write | `{ id, status }`                                                            | `{ job }`                           | idempotent, not destructive   |
+| `create_company` | write | `{ name, slug?, homepageUrl?, logoUrl? }`                                   | `{ company }`                       | not readOnly, not destructive |
+| `create_source`  | write | `{ companyId, platform, board, config, includeAll, enabled }`               | `{ source }`                        | not readOnly, not destructive |
+| `update_source`  | write | `{ id, enabled?, includeAll?, config?, board? }`                            | `{ source }`                        | idempotent, not destructive   |
+| `preview_source` | write | `{ platform, board, config, includeAll }`                                   | `{ fetched, kept, sample }`         | not readOnly (network fetch)  |
+| `trigger_run`    | write | –                                                                           | `{ instanceId }`                    | not readOnly, not idempotent  |
 
 Tool descriptions are written for agents: what it does, when to use it, what the id format is. Tools a key lacks the scope for are still listed (simpler, cacheable) but return `insufficient_scope`.
 
@@ -148,24 +159,36 @@ Plus copyable snippets for Cursor (`mcp.json` with `headers`) and Codex (`config
 
 ## 7. Shared service layer
 
-`worker/services/projects.ts`, pure functions over Drizzle, no Hono/MCP types:
+`worker/services/{jobs,companies,sources,runs}.ts`, pure functions over Drizzle, no Hono/MCP types. Resources are shared pipeline data (not per-user) — services take no ownerId; admin gating happens in the route/MCP layer:
 
 ```ts
-list(db, ownerId, { status?, limit, cursor? }): Promise<{ items: Project[]; nextCursor: string | null }>
-get(db, ownerId, id): Promise<Project>          // throws ServiceError("not_found")
-create(db, ownerId, input: ProjectCreate): Promise<Project>
-update(db, ownerId, id, patch: ProjectUpdate): Promise<Project>
-remove(db, ownerId, id): Promise<void>
+// jobs.ts
+listJobs(db, filters): Promise<{ items: Job[]; nextCursor: string | null }>
+getJob(db, id): Promise<Job>                       // throws ServiceError("not_found")
+setJobStatus(db, id, status): Promise<Job>
+// companies.ts
+listCompanies(db), createCompany(db, input)        // ServiceError("conflict") on dup slug
+updateCompany(db, id, patch)
+// sources.ts
+listSources(db)                                    // + company, last run, active job count
+createSource(db, input)                            // adapter parseConfig; "conflict" on dup
+updateSource(db, id, patch)
+previewSource(db, input)                           // real fetch, no writes; "upstream_failed"
+// runs.ts
+listRuns(db, { limit, cursor? }), getRun(db, id)   // getRun includes source_run rows
+triggerRun(env)                                    // ServiceError("unavailable") w/o binding
 ```
 
 `ServiceError { code, message, details? }` is translated to HTTP status in the API layer and to `isError` results in the MCP layer.
 
 ## 8. Web app UI
 
-- **Projects page** (`/projects`, nav item): Kumo `Table` (name, status `StatusBadge`, notes preview, updated), "New project" `Dialog`, row `DropdownMenu` (edit, archive, delete with `ConfirmDialog`), `CrewEmpty` empty state. Uses session-authenticated internal routes (`/api/projects/*`) that call the same service layer.
+- **Dashboard** (`/dashboard`): tiles (active jobs, retired 7d, failing sources, last run), "Run now" button (disabled + tooltip on `503 unavailable`).
+- **Jobs** (`/jobs`, `/jobs/$id`): URL-synced filter bar, Kumo `Table`, load-more pagination; detail with apply link + retire/restore `ConfirmDialog`.
+- **Sources** (`/sources`): table with enabled toggle + last run; "Add source" `Dialog` (company picker/inline create, platform, board, config JSON, include-all, Test → preview, Save).
+- **Runs** (`/runs`, `/runs/$id`): list + per-source detail.
 - **Settings → API keys** (`SettingsSection`): list (name, `hj_…` prefix, scopes, created, last used, expires, revoke via `ConfirmDialog`); "Create key" `Dialog` (name, scopes checkboxes, expiry `Select`); show-once `Dialog` with `ClipboardText` and a warning, plus the client snippets from §6.3.
-- Dashboard empty state links to Projects.
-- Site: drop the "Coming soon" tags, put Projects back in the hero mock, update `llms.txt` "For agents" section.
+- All dashboard pages use session-authenticated internal routes (`/api/*`) that call the same service layer and require `role: "admin"`.
 
 ## 9. Discovery
 
@@ -177,29 +200,29 @@ remove(db, ownerId, id): Promise<void>
 1. Keys: create via session → shown once; verify valid/invalid/revoked/expired; list/revoke own only.
 2. Auth: `/api/v1/me` 401 without key, 401 bad key, 200 good key; session cookie alone is rejected.
 3. Scopes: read-only key gets 403 on POST/PATCH/DELETE and on write tools.
-4. Projects API: full create → list → get → update → delete; validation 400 envelope with `requestId`; another user's id → 404; pagination cursor round-trip.
+4. Resource APIs: jobs filters + pagination, PATCH retire/restore; companies create/slug/409; sources config validation/409/enable/active-count; runs list/detail/503; 401 unauth, 403 non-admin, `insufficient_scope` on under-scoped keys.
 5. OpenAPI: 401 without a key by default, 200 with any key, public when `publicSpec` is true; document is `openapi: 3.1.x`, contains every path, every operation has `bearerAuth`, validates against the OpenAPI 3.1 schema.
-6. MCP (official client `@modelcontextprotocol/client@2.3.1` over HTTP): 401 without key; `tools/list` returns 6 tools with annotations; `create_project` then `list_projects` round-trip; `whoami`; scope error result.
+6. MCP (official client `@modelcontextprotocol/client@2.3.1` over HTTP): 401 without key; `tools/list` returns 13 tools with annotations; `list_jobs`/`set_job_status` round-trip; `whoami`; scope + admin error results.
 7. Rate limit: per-key limit returns 429 with headers (test env lowers the limit).
-8. UI: verify-ui gate (screenshots light/dark/mobile) for Projects and API keys; click-through of create/revoke/delete.
+8. UI: verify-ui gate (screenshots light/dark/mobile) for dashboard/jobs/sources/runs and API keys.
 
 Manual: MCP Inspector (`npx @modelcontextprotocol/inspector`) and a real `claude mcp add` against `alchemy dev`.
 
 ## 11. Delivery plan (small, reviewed commits)
 
-1. Projects: schema, migration, service, internal session routes, Projects page.
-2. API keys: plugin, schema regen, migration, Settings UI, `requireApiKey` + `requireScope`.
+1. Resources (jobs, companies, sources, runs): services, internal session routes, dashboard pages.
+2. API keys: plugin, schema regen, migration, Settings UI, `requireApiKey` + `requireScope` + admin gate.
 3. `/api/v1` with the OpenAPI document (key-gated by default), error envelope, rate-limit headers.
 4. MCP server and tools.
-5. Discovery (`llms.txt`, api-catalog, `server.json`) and site copy/mock update.
-6. Docs: README "Agent access" section, AGENTS.md routing, a `add-resource` skill showing how to add a second resource end to end.
+5. Discovery (`llms.txt`, api-catalog, `server.json`).
+6. Docs: README "Agent access" section, AGENTS.md routing, the `add-resource` skill using Sources as the worked reference.
 
 ## 12. Decisions
 
 1. Key prefix: `hj_` (rewritten by `scripts/init.ts`).
 2. Admins can't list or revoke other users' keys in this phase.
 3. Default per-key rate limit: 120 requests/minute.
-4. Demo resource: Projects.
+4. Resources: the ingest pipeline's jobs, companies, sources and runs — admin-only on every surface.
 
 5. No API docs UI (no Scalar); ship `openapi.json` only.
 6. MCP: the MCP SDK v2's own `createMcpHandler` (newest protocol revision + 2025 fallback); `agents` not needed.

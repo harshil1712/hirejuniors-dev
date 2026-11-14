@@ -12,7 +12,11 @@ import { sessionPrincipal, requireApiKey } from "./middleware/principal";
 import { apiKeyRateLimit } from "./middleware/rate-limit";
 import { mcpHandler } from "./mcp";
 import { errorJson } from "./api/errors";
-import { projectsApi } from "./api/projects";
+import { jobsApi } from "./api/jobs";
+import { companiesApi } from "./api/companies";
+import { sourcesApi } from "./api/sources";
+import { runsApi } from "./api/runs";
+import { dashboardApi } from "./api/dashboard";
 import { apiKeysApi } from "./api/api-keys";
 import { createV1Api } from "./api/v1";
 import { discoveryRoutes } from "./routes/discovery";
@@ -61,11 +65,17 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/", publicConfigRoutes);
 app.route("/", meRoutes);
 
-// Session-authenticated Projects API for the web app — same router that
-// /api/v1 mounts with API-key auth in a later checkpoint.
-app.use("/api/projects", sessionPrincipal);
-app.use("/api/projects/*", sessionPrincipal);
-app.route("/api", projectsApi);
+// Session-authenticated dashboard APIs for the web app — the same routers
+// /api/v1 mounts with API-key auth (dashboard summary stays session-only).
+for (const name of ["jobs", "companies", "sources", "runs", "dashboard"]) {
+  app.use(`/api/${name}`, sessionPrincipal);
+  app.use(`/api/${name}/*`, sessionPrincipal);
+}
+app.route("/api", jobsApi);
+app.route("/api", companiesApi);
+app.route("/api", sourcesApi);
+app.route("/api", runsApi);
+app.route("/api", dashboardApi);
 
 // Key management (Settings → API keys) — session-only router.
 app.use("/api/api-keys", sessionPrincipal);
@@ -114,7 +124,7 @@ app.all("/mcp", (c) => {
       token: c.req.header("authorization")!.slice("Bearer ".length),
       clientId: principal.keyId ?? "",
       scopes: principal.scopes,
-      extra: { userId: principal.userId },
+      extra: { userId: principal.userId, isAdmin: principal.isAdmin },
     },
   });
 });

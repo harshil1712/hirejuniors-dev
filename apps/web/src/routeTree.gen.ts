@@ -18,8 +18,12 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
-import { Route as AuthedProjectsRouteImport } from './routes/_authed/projects'
+import { Route as AuthedJobsRouteImport } from './routes/_authed/jobs'
+import { Route as AuthedRunsRouteImport } from './routes/_authed/runs'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed/settings'
+import { Route as AuthedSourcesRouteImport } from './routes/_authed/sources'
+import { Route as AuthedJobsIdRouteImport } from './routes/_authed/jobs_.$id'
+import { Route as AuthedRunsIdRouteImport } from './routes/_authed/runs_.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -65,14 +69,34 @@ const AuthedDashboardRoute = AuthedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedProjectsRoute = AuthedProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
+const AuthedJobsRoute = AuthedJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedRunsRoute = AuthedRunsRouteImport.update({
+  id: '/runs',
+  path: '/runs',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSourcesRoute = AuthedSourcesRouteImport.update({
+  id: '/sources',
+  path: '/sources',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedJobsIdRoute = AuthedJobsIdRouteImport.update({
+  id: '/jobs_/$id',
+  path: '/jobs/$id',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedRunsIdRoute = AuthedRunsIdRouteImport.update({
+  id: '/runs_/$id',
+  path: '/runs/$id',
   getParentRoute: () => AuthedRoute,
 } as any)
 
@@ -85,8 +109,12 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRoute
   '/dashboard': typeof AuthedDashboardRoute
-  '/projects': typeof AuthedProjectsRoute
+  '/jobs': typeof AuthedJobsRoute
+  '/runs': typeof AuthedRunsRoute
   '/settings': typeof AuthedSettingsRoute
+  '/sources': typeof AuthedSourcesRoute
+  '/jobs/$id': typeof AuthedJobsIdRoute
+  '/runs/$id': typeof AuthedRunsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -97,8 +125,12 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRoute
   '/dashboard': typeof AuthedDashboardRoute
-  '/projects': typeof AuthedProjectsRoute
+  '/jobs': typeof AuthedJobsRoute
+  '/runs': typeof AuthedRunsRoute
   '/settings': typeof AuthedSettingsRoute
+  '/sources': typeof AuthedSourcesRoute
+  '/jobs/$id': typeof AuthedJobsIdRoute
+  '/runs/$id': typeof AuthedRunsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -111,8 +143,12 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/admin': typeof AuthedAdminRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
-  '/_authed/projects': typeof AuthedProjectsRoute
+  '/_authed/jobs': typeof AuthedJobsRoute
+  '/_authed/runs': typeof AuthedRunsRoute
   '/_authed/settings': typeof AuthedSettingsRoute
+  '/_authed/sources': typeof AuthedSourcesRoute
+  '/_authed/jobs_/$id': typeof AuthedJobsIdRoute
+  '/_authed/runs_/$id': typeof AuthedRunsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -125,8 +161,12 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin'
     | '/dashboard'
-    | '/projects'
+    | '/jobs'
+    | '/runs'
     | '/settings'
+    | '/sources'
+    | '/jobs/$id'
+    | '/runs/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -137,8 +177,12 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin'
     | '/dashboard'
-    | '/projects'
+    | '/jobs'
+    | '/runs'
     | '/settings'
+    | '/sources'
+    | '/jobs/$id'
+    | '/runs/$id'
   id:
     | '__root__'
     | '/'
@@ -150,8 +194,12 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/admin'
     | '/_authed/dashboard'
-    | '/_authed/projects'
+    | '/_authed/jobs'
+    | '/_authed/runs'
     | '/_authed/settings'
+    | '/_authed/sources'
+    | '/_authed/jobs_/$id'
+    | '/_authed/runs_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -229,11 +277,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/projects': {
-      id: '/_authed/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof AuthedProjectsRouteImport
+    '/_authed/jobs': {
+      id: '/_authed/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof AuthedJobsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/runs': {
+      id: '/_authed/runs'
+      path: '/runs'
+      fullPath: '/runs'
+      preLoaderRoute: typeof AuthedRunsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings': {
@@ -243,21 +298,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/sources': {
+      id: '/_authed/sources'
+      path: '/sources'
+      fullPath: '/sources'
+      preLoaderRoute: typeof AuthedSourcesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/jobs_/$id': {
+      id: '/_authed/jobs_/$id'
+      path: '/jobs/$id'
+      fullPath: '/jobs/$id'
+      preLoaderRoute: typeof AuthedJobsIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/runs_/$id': {
+      id: '/_authed/runs_/$id'
+      path: '/runs/$id'
+      fullPath: '/runs/$id'
+      preLoaderRoute: typeof AuthedRunsIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
   AuthedAdminRoute: typeof AuthedAdminRoute
   AuthedDashboardRoute: typeof AuthedDashboardRoute
-  AuthedProjectsRoute: typeof AuthedProjectsRoute
+  AuthedJobsRoute: typeof AuthedJobsRoute
+  AuthedRunsRoute: typeof AuthedRunsRoute
   AuthedSettingsRoute: typeof AuthedSettingsRoute
+  AuthedSourcesRoute: typeof AuthedSourcesRoute
+  AuthedJobsIdRoute: typeof AuthedJobsIdRoute
+  AuthedRunsIdRoute: typeof AuthedRunsIdRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRoute: AuthedAdminRoute,
   AuthedDashboardRoute: AuthedDashboardRoute,
-  AuthedProjectsRoute: AuthedProjectsRoute,
+  AuthedJobsRoute: AuthedJobsRoute,
+  AuthedRunsRoute: AuthedRunsRoute,
   AuthedSettingsRoute: AuthedSettingsRoute,
+  AuthedSourcesRoute: AuthedSourcesRoute,
+  AuthedJobsIdRoute: AuthedJobsIdRoute,
+  AuthedRunsIdRoute: AuthedRunsIdRoute,
 }
 
 const AuthedRouteWithChildren =

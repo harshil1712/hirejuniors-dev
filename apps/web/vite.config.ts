@@ -56,7 +56,34 @@ export default defineConfig({
         miniflare: {
           bindings: { TEST_MIGRATIONS: testMigrations },
           serviceBindings: { EMAIL_SINK: "email-sink" },
+          // Every outbound global fetch in the worker under test lands here —
+          // keeps the suite fully offline. Routes by host: Turnstile's
+          // siteverify (the always-pass test key still does the HTTP call)
+          // and the Greenhouse board API used by POST /sources/preview.
+          outboundService: "fixture-feed",
           workers: [
+            {
+              name: "fixture-feed",
+              modules: true,
+              compatibilityDate: "2025-06-01",
+              script: `const GH_JOBS = [
+                { id: 1, title: "Software Engineer Intern", absolute_url: "https://b.example/1", content: "", location: { name: "Austin, TX, United States" }, updated_at: "2026-02-02T17:45:00.000Z" },
+                { id: 2, title: "Senior Software Engineer", absolute_url: "https://b.example/2", content: "", location: { name: "Austin, TX, United States" } },
+                { id: 3, title: "Graduate Data Analyst", absolute_url: "https://b.example/3", content: "", location: { name: "London, United Kingdom" } },
+                { id: 4, title: "Engineering Manager", absolute_url: "https://b.example/4", content: "", location: { name: "Austin, TX, United States" } },
+                { id: 5, title: "Junior Frontend Developer", absolute_url: "https://b.example/5", content: "", location: { name: "Remote - Portugal" } },
+              ];
+              export default { async fetch(req) {
+                const host = new URL(req.url).hostname;
+                if (host === "challenges.cloudflare.com") {
+                  return Response.json({ success: true, "error-codes": [], hostname: "x" });
+                }
+                if (host === "boards-api.greenhouse.io") {
+                  return Response.json({ jobs: GH_JOBS });
+                }
+                return new Response("fixture-feed: unknown host " + host, { status: 404 });
+              }}`,
+            },
             {
               name: "email-sink",
               modules: true,

@@ -7,7 +7,10 @@ import { PRODUCT } from "../../src/config";
 import { json, onApiError, errorJson, validationHook } from "./errors";
 import { requireApiKey, type PrincipalVars } from "../middleware/principal";
 import { apiKeyRateLimit } from "../middleware/rate-limit";
-import { projectsApi } from "./projects";
+import { jobsApi } from "./jobs";
+import { companiesApi } from "./companies";
+import { sourcesApi } from "./sources";
+import { runsApi } from "./runs";
 import { ErrorResponse, MeResult } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
@@ -86,8 +89,12 @@ export function createV1Api({ publicSpec }: { publicSpec: boolean }) {
     },
   );
 
-  // The Projects resource — same router the web app uses with a session.
-  app.route("/", projectsApi);
+  // The ingest-dashboard resources — same routers the web app uses with a
+  // session. Admin role is required inside each router.
+  app.route("/", jobsApi);
+  app.route("/", companiesApi);
+  app.route("/", sourcesApi);
+  app.route("/", runsApi);
 
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",
@@ -104,7 +111,10 @@ export function createV1Api({ publicSpec }: { publicSpec: boolean }) {
     servers: [{ url: `https://${PRODUCT.appDomain}` }],
     tags: [
       { name: "Account", description: "The calling credential's identity" },
-      { name: "Projects", description: "Create and manage projects" },
+      { name: "Jobs", description: "Browse and moderate job listings" },
+      { name: "Companies", description: "Manage companies" },
+      { name: "Sources", description: "Manage ingest sources" },
+      { name: "Runs", description: "Inspect and trigger ingest runs" },
     ],
   });
 

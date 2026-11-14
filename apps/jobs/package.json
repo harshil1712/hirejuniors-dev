@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./platforms": "./src/platforms/index.ts",
+    "./classify": "./src/classify.ts",
+    "./location": "./src/location.ts"
+  },
   "scripts": {
     "test": "vp test",
     "check": "vp check",

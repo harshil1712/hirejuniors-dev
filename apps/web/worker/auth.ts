@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { APIError, betterAuth } from "better-auth";
 import { admin, captcha, oAuthProxy } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -32,14 +32,16 @@ export function createAuth(env: Env) {
   // Register Google only when real credentials exist — an empty provider
   // breaks sign-in otherwise.
   const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
-  // Per-deployment switch: close NEW sign-ups, keep sign-in working.
+  // Per-deployment switch: close NEW sign-ups except for the owner email
+  // (enforced in the user.create hook below, so it covers email + social);
+  // existing accounts still sign in.
   const signupDisabled = env.SIGNUP_DISABLED === "true";
+  const ownerEmail = env.OWNER_ADMIN_EMAIL.toLowerCase();
   const socialProviders = googleEnabled
     ? {
         google: {
           clientId: env.GOOGLE_CLIENT_ID,
           clientSecret: env.GOOGLE_CLIENT_SECRET,
-          disableSignUp: signupDisabled,
         },
       }
     : {};
@@ -51,7 +53,9 @@ export function createAuth(env: Env) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      disableSignUp: signupDisabled,
+      // Not `disableSignUp`: that flag blocks the owner too. The
+      // user.create.before hook below enforces owner-only sign-up instead.
+      disableSignUp: false,
       sendResetPassword: async ({ user, url }) => {
         const t = resetPasswordTemplate(url);
         await sendAuthEmail(env, { to: user.email, ...t });
@@ -80,7 +84,16 @@ export function createAuth(env: Env) {
     databaseHooks: {
       user: {
         create: {
-          before: async (user) => ({ data: bootstrapAdmin(user, env.OWNER_ADMIN_EMAIL) }),
+          before: async (user) => {
+            if (signupDisabled && user.email?.toLowerCase() !== ownerEmail) {
+              // Not FORBIDDEN: with requireEmailVerification the sign-up
+              // endpoint turns a 403 from createUser into a generic 200
+              // (anti-enumeration), which would look like a successful
+              // sign-up to a client even though no row was created.
+              throw new APIError("BAD_REQUEST", { message: "Sign-up is disabled" });
+            }
+            return { data: bootstrapAdmin(user, env.OWNER_ADMIN_EMAIL) };
+          },
         },
       },
       session: {

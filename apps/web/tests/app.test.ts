@@ -40,7 +40,7 @@ describe("worker", () => {
 describe("auth", () => {
   beforeAll(migrate);
 
-  it("SIGNUP_DISABLED=true closes sign-ups but sign-in still works", async () => {
+  it("SIGNUP_DISABLED=true allows only the owner email; sign-in still works", async () => {
     // Seed a verified user with the flag off first.
     const email = `disabled-${crypto.randomUUID()}@t.dev`;
     await signUp(email);
@@ -48,6 +48,7 @@ describe("auth", () => {
 
     env.SIGNUP_DISABLED = "true";
     try {
+      // Stranger → rejected, no user row.
       const closedEmail = `closed-${crypto.randomUUID()}@t.dev`;
       const closed = await signUp(closedEmail);
       expect(closed.status).not.toBe(200);
@@ -55,6 +56,10 @@ describe("auth", () => {
         .bind(closedEmail)
         .first();
       expect(row).toBeNull();
+
+      // Owner (OWNER_ADMIN_EMAIL=owner@example.com) → allowed.
+      const owner = await signUp("owner@example.com");
+      expect(owner.status).toBe(200);
 
       const config = await SELF.fetch("https://x/api/public-config");
       expect((await config.json<{ signupEnabled: boolean }>()).signupEnabled).toBe(false);
@@ -119,9 +124,10 @@ describe("auth", () => {
     expect(r1.status).toBe(403);
 
     // owner (OWNER_ADMIN_EMAIL=owner@example.com) — verify first, then the
-    // admin plugin sees role=admin from the bootstrap hook.
-    const rv = await signUp("owner@example.com");
-    expect(rv.status).toBe(200);
+    // admin plugin sees role=admin from the bootstrap hook. The account may
+    // already exist (the SIGNUP_DISABLED test above signs the owner up), so
+    // don't assert on the sign-up status.
+    await signUp("owner@example.com");
     const v2 = await verifyLatest("owner@example.com");
     const r2 = await SELF.fetch("https://x/api/auth/admin/list-users", {
       headers: { cookie: v2.headers.get("set-cookie") ?? "" },

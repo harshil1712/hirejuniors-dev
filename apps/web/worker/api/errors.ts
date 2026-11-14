@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
 import type { ZodError, ZodType } from "zod";
-import { ServiceError } from "../services/projects";
+import { ServiceError } from "../services/errors";
 
 export interface ErrorDetail {
   path: string;
@@ -35,7 +35,16 @@ export const json = <T extends ZodType>(schema: T) => ({
  */
 export function onApiError(err: Error, c: Context) {
   if (err instanceof ServiceError) {
-    return errorJson(c, err.code === "not_found" ? 404 : 400, err.code, err.message, err.details);
+    const status = (
+      {
+        not_found: 404,
+        validation_failed: 400,
+        conflict: 409,
+        upstream_failed: 502,
+        unavailable: 503,
+      } as const
+    )[err.code];
+    return errorJson(c, status, err.code, err.message, err.details);
   }
   console.error(
     JSON.stringify({

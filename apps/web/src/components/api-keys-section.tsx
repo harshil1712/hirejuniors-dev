@@ -219,8 +219,8 @@ function CreateKeyDialog({
     if (!valid) return;
     setSaving(true);
     try {
-      const scopes: Scope[] = ["projects:read"];
-      if (canWrite) scopes.push("projects:write");
+      const scopes: Scope[] = ["jobs:read"];
+      if (canWrite) scopes.push("jobs:write");
       const created = await createKey({
         name: name.trim(),
         scopes,
@@ -258,13 +258,13 @@ function CreateKeyDialog({
           <fieldset className="flex flex-col gap-2">
             <legend className="text-sm text-kumo-default">Scopes</legend>
             <Checkbox
-              label="Read projects"
+              label="Read jobs"
               checked={canRead}
               disabled={canWrite}
               onCheckedChange={(v) => setCanRead(v === true)}
             />
             <Checkbox
-              label="Write projects"
+              label="Write jobs"
               checked={canWrite}
               onCheckedChange={(v) => setWrite(v === true)}
             />

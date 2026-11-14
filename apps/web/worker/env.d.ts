@@ -21,8 +21,13 @@ interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   OWNER_ADMIN_EMAIL: string;
-  /** "true" closes new sign-ups (email + Google); existing accounts still sign in. */
+  /** "true" closes new sign-ups except OWNER_ADMIN_EMAIL (email + Google);
+   * existing accounts still sign in. */
   SIGNUP_DISABLED?: string;
+  /** Cross-script Workflow binding to the jobs worker's IngestWorkflow.
+   * Absent on PR previews (the jobs worker doesn't exist there) and in the
+   * vitest pool — POST /runs answers 503 `unavailable`. */
+  INGEST_WORKFLOW?: Workflow;
   OAUTH_PROXY_URL?: string;
   OAUTH_PROXY_SECRET?: string;
 }

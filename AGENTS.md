@@ -9,9 +9,9 @@ Hire Juniors is a reusable starter for full-stack Cloudflare apps: a Vite/React 
 - `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
 - Blog posts are Markdown in git: `apps/site/src/content/blog/*.md` — schema in `src/content.config.ts`, write via the `write-post` skill; SEO gate is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
-- Adding a resource to the app (schema → API → MCP → UI) — follow the `add-resource` skill; it walks the Projects resource end to end.
+- Adding a resource to the app (schema → API → MCP → UI) — follow the `add-resource` skill; it walks the Sources resource end to end.
 - `scripts/init.ts` — renames the starter (package scope, worker names, domains, product name). `scripts/cf-token-preflight.sh` — deploy-token check.
-- `apps/web` agent access — one service layer (`worker/services/*`) behind three surfaces: session `/api/projects`, key-gated `/api/v1` + its OpenAPI doc, and MCP at `/mcp` (`worker/mcp.ts`). Shared zod schemas live in `worker/api/schemas.ts`; principal/scopes in `worker/middleware/principal.ts`. Agent spec: `docs/specs/agent-api.md`; registry entry: `server.json`.
+- `apps/web` agent access — one service layer (`worker/services/*`) behind three surfaces: session `/api/{jobs,companies,sources,runs}`, key-gated `/api/v1` + its OpenAPI doc, and MCP at `/mcp` (`worker/mcp.ts`). All resource routes require the admin role (`principal.isAdmin`). Shared zod schemas live in `worker/api/schemas.ts`; principal/scopes in `worker/middleware/principal.ts`. Agent spec: `docs/specs/agent-api.md`; registry entry: `server.json`.
 - `tooling/anti-slop` — vendored Oxlint JS plugin, wired into `vp check`.
 - `alchemy.run.ts` — all infrastructure (Alchemy IaC). No resource is created any other way.
 - `project.config.ts` — single source for names/domains (name, productName, domain, appSubdomain, emailFrom).

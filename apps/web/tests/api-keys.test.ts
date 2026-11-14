@@ -54,7 +54,7 @@ describe("api keys", () => {
 
     const r = await createKeyRequest(cookie, {
       name: "My key",
-      scopes: ["projects:read"],
+      scopes: ["jobs:read"],
       expiresInDays: 90,
     });
     expect(r.status).toBe(201);
@@ -76,7 +76,7 @@ describe("api keys", () => {
     expect(mine!.key).toBeUndefined();
     // The list endpoint returns permissions already parsed (object), which is
     // what the Settings UI renders as scope badges.
-    expect(mine!.permissions).toEqual({ projects: ["read"] });
+    expect(mine!.permissions).toEqual({ jobs: ["read"] });
   });
 
   it("/api/v1/me: 401 without header (+WWW-Authenticate), 401 garbage, 401 session cookie, 200 with key", async () => {
@@ -86,7 +86,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "agent",
-          scopes: ["projects:read"],
+          scopes: ["jobs:read"],
           expiresInDays: 30,
         })
       ).json<{ data: CreatedKey }>()
@@ -114,7 +114,7 @@ describe("api keys", () => {
     expect(body.data.userId).toBe(user!.id);
     expect(body.data.email).toBe(email);
     expect(body.data.keyId).toBe(created.id);
-    expect(body.data.scopes).toEqual(["projects:read"]);
+    expect(body.data.scopes).toEqual(["jobs:read"]);
   });
 
   it("revoked and expired keys get 401; another user can't revoke my key", async () => {
@@ -124,7 +124,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "victim",
-          scopes: ["projects:read"],
+          scopes: ["jobs:read"],
           expiresInDays: 30,
         })
       ).json<{ data: CreatedKey }>()
@@ -146,7 +146,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "old",
-          scopes: ["projects:read"],
+          scopes: ["jobs:read"],
           expiresInDays: 30,
         })
       ).json<{ data: CreatedKey }>()
@@ -176,14 +176,14 @@ describe("api keys", () => {
 
     const badExpiry = await createKeyRequest(cookie, {
       name: "x",
-      scopes: ["projects:read"],
+      scopes: ["jobs:read"],
       expiresInDays: 7,
     });
     expect(badExpiry.status).toBe(400);
 
     const anon = await createKeyRequest("", {
       name: "x",
-      scopes: ["projects:read"],
+      scopes: ["jobs:read"],
       expiresInDays: 30,
     });
     expect(anon.status).toBe(401);
@@ -196,7 +196,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "banned",
-          scopes: ["projects:read"],
+          scopes: ["jobs:read"],
           expiresInDays: 30,
         })
       ).json<{ data: CreatedKey }>()
@@ -227,7 +227,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "doomed",
-          scopes: ["projects:read"],
+          scopes: ["jobs:read"],
           expiresInDays: 30,
         })
       ).json<{ data: CreatedKey }>()
@@ -255,7 +255,7 @@ describe("api keys", () => {
       await (
         await createKeyRequest(cookie, {
           name: "writer",
-          scopes: ["projects:write"],
+          scopes: ["jobs:write"],
           expiresInDays: null,
         })
       ).json<{ data: CreatedKey }>()
@@ -264,6 +264,6 @@ describe("api keys", () => {
     const ok = await me(created.key);
     expect(ok.status).toBe(200);
     const body = await ok.json<MeBody>();
-    expect(body.data.scopes.sort()).toEqual(["projects:read", "projects:write"]);
+    expect(body.data.scopes.sort()).toEqual(["jobs:read", "jobs:write"]);
   });
 });

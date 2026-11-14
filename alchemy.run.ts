@@ -67,7 +67,8 @@ export const Web = Cloudflare.Website.Vite(
   `${PROJECT.name}-web`,
   Effect.gen(function* () {
     const widget = isProd ? yield* TurnstileWidget! : null;
-    return {
+    const stage = sanitizeStage(yield* Alchemy.Stage);
+    const props = {
       // a Preview inherits script-level settings (name, domain) from its parent
       name: PREVIEW_NAME ? undefined : `${PROJECT.name}-web`,
       rootDir: "./apps/web",
@@ -115,11 +116,26 @@ export const Web = Cloudflare.Website.Vite(
         GOOGLE_CLIENT_ID: Config.Redacted("GOOGLE_CLIENT_ID").pipe(Config.withDefault("")),
         GOOGLE_CLIENT_SECRET: Config.Redacted("GOOGLE_CLIENT_SECRET").pipe(Config.withDefault("")),
         OWNER_ADMIN_EMAIL: Config.String("OWNER_ADMIN_EMAIL").pipe(Config.withDefault("")),
-        SIGNUP_DISABLED: Config.String("SIGNUP_DISABLED").pipe(Config.withDefault("")),
+        // Closed on prod (owner-only sign-up via the user.create hook);
+        // open elsewhere so previews/dev stay usable. Env still overrides.
+        SIGNUP_DISABLED: Config.String("SIGNUP_DISABLED").pipe(
+          Config.withDefault(isProd ? "true" : ""),
+        ),
         OAUTH_PROXY_URL: Config.String("OAUTH_PROXY_URL").pipe(Config.withDefault("")),
         OAUTH_PROXY_SECRET: Config.Redacted("OAUTH_PROXY_SECRET").pipe(Config.withDefault("")),
       },
     };
+    if (PREVIEW_NAME) return props;
+    // Cross-script binding to the jobs worker's IngestWorkflow — the
+    // dashboard's "Run now". Absent on previews (no jobs worker there);
+    // POST /runs then answers 503. `workflowName` repeats the jobs binding's
+    // pinned physical name — they must resolve identically.
+    const ingestWorkflow = Cloudflare.Workflow("IngestWorkflow", {
+      className: "IngestWorkflow",
+      scriptName: `${PROJECT.name}-jobs`,
+      workflowName: `${PROJECT.name}-ingest-${stage}`,
+    });
+    return { ...props, env: { ...props.env, INGEST_WORKFLOW: ingestWorkflow } };
   }),
 );
 
@@ -150,23 +166,32 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
 // versions, so the whole worker is skipped when PR_NAME is set.
 export const Jobs = PREVIEW_NAME
   ? null
-  : Cloudflare.Worker(`${PROJECT.name}-jobs`, {
-      name: `${PROJECT.name}-jobs`,
-      main: "./apps/jobs/src/index.ts",
-      compatibility: { date: "2026-10-01" },
-      observability: {
-        enabled: true,
-        logs: { enabled: true, invocationLogs: true },
-        traces: { enabled: true, headSamplingRate: 1 },
-      },
-      env: {
-        DB,
-        INGEST_WORKFLOW: Cloudflare.Workflow("IngestWorkflow", {
-          className: "IngestWorkflow",
-          schedules: ["0 6 * * 1"],
-        }),
-      },
-    });
+  : Cloudflare.Worker(
+      `${PROJECT.name}-jobs`,
+      Effect.gen(function* () {
+        const stage = yield* Alchemy.Stage;
+        return {
+          name: `${PROJECT.name}-jobs`,
+          main: "./apps/jobs/src/index.ts",
+          compatibility: { date: "2026-10-01" },
+          observability: {
+            enabled: true,
+            logs: { enabled: true, invocationLogs: true },
+            traces: { enabled: true, headSamplingRate: 1 },
+          },
+          env: {
+            DB,
+            // Pinned stage-scoped physical name — the web worker's
+            // cross-script binding repeats it verbatim.
+            INGEST_WORKFLOW: Cloudflare.Workflow("IngestWorkflow", {
+              className: "IngestWorkflow",
+              workflowName: `${PROJECT.name}-ingest-${sanitizeStage(stage)}`,
+              schedules: ["0 6 * * 1"],
+            }),
+          },
+        };
+      }),
+    );
 
 export default Alchemy.Stack(
   PROJECT.name,

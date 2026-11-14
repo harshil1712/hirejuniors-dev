@@ -3,7 +3,14 @@ import { SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vite-plus/test";
 import { Client } from "@modelcontextprotocol/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { migrate, verifiedSessionCookie } from "./helpers";
+import {
+  migrate,
+  verifiedSessionCookie,
+  adminSessionCookie,
+  seedCompany,
+  seedSource,
+  seedJob,
+} from "./helpers";
 
 interface ToolAnnotations {
   readOnlyHint?: boolean;
@@ -15,13 +22,13 @@ interface CallContent {
   email?: string;
   name?: string;
   scopes?: string[];
-  project?: { id: string; name: string; status: string };
-  projects?: { id: string }[];
+  job?: { id: string; status: string; retireReason: string | null };
+  jobs?: { id: string }[];
   error?: { code: string; message: string };
 }
 
-async function makeKey(email: string, scopes: string[]) {
-  const cookie = await verifiedSessionCookie(email);
+async function makeKey(email: string, scopes: string[], admin = true) {
+  const cookie = await (admin ? adminSessionCookie(email) : verifiedSessionCookie(email));
   const r = await SELF.fetch("https://x/api/api-keys", {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
@@ -69,11 +76,8 @@ describe("/mcp", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBeTruthy();
   });
 
-  it("SDK client (2026 protocol): tools/list → 6 tools + annotations; whoami", async () => {
-    const key = await makeKey(`mcp1-${crypto.randomUUID()}@t.dev`, [
-      "projects:read",
-      "projects:write",
-    ]);
+  it("SDK client (2026 protocol): tools/list → 13 tools + annotations; whoami", async () => {
+    const key = await makeKey(`mcp1-${crypto.randomUUID()}@t.dev`, ["jobs:read", "jobs:write"]);
     const { client, transport } = await connect(key);
     {
       expect(transport.protocolVersion).toBe("2026-07-28");
@@ -81,80 +85,96 @@ describe("/mcp", () => {
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
-          "create_project",
-          "delete_project",
-          "get_project",
-          "list_projects",
-          "update_project",
+          "create_company",
+          "create_source",
+          "get_job",
+          "get_run",
+          "list_companies",
+          "list_jobs",
+          "list_runs",
+          "list_sources",
+          "preview_source",
+          "set_job_status",
+          "trigger_run",
+          "update_source",
           "whoami",
         ].sort(),
       );
       const ann = (n: string) =>
         (tools.find((t) => t.name === n)!.annotations ?? {}) as ToolAnnotations;
-      expect(ann("list_projects")).toMatchObject({ readOnlyHint: true, idempotentHint: true });
-      expect(ann("get_project")).toMatchObject({ readOnlyHint: true, idempotentHint: true });
-      expect(ann("whoami")).toMatchObject({ readOnlyHint: true, idempotentHint: true });
-      expect(ann("create_project")).toMatchObject({ destructiveHint: false });
-      expect(ann("update_project")).toMatchObject({ idempotentHint: true, destructiveHint: false });
-      expect(ann("delete_project")).toMatchObject({ destructiveHint: true });
+      for (const n of [
+        "list_jobs",
+        "get_job",
+        "list_sources",
+        "list_companies",
+        "list_runs",
+        "get_run",
+        "whoami",
+      ]) {
+        expect(ann(n)).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+      }
+      expect(ann("set_job_status")).toMatchObject({ idempotentHint: true });
+      expect(ann("create_company")).toMatchObject({ destructiveHint: false });
       for (const t of tools) expect(t.outputSchema).toBeTruthy();
 
       const me = await client.callTool({ name: "whoami", arguments: {} });
       const sc = me.structuredContent as CallContent;
       expect(sc.userId).toBeTruthy();
       expect(sc.email).toContain("@t.dev");
-      expect(sc.scopes).toEqual(["projects:read", "projects:write"]);
+      expect(sc.scopes).toEqual(["jobs:read", "jobs:write"]);
     }
   });
 
-  it("SDK client: project round-trip; read-only key gets insufficient_scope", async () => {
-    const key = await makeKey(`mcp2-${crypto.randomUUID()}@t.dev`, [
-      "projects:read",
-      "projects:write",
-    ]);
+  it("SDK client: list_jobs + set_job_status; scope denial; non-admin forbidden", async () => {
+    const key = await makeKey(`mcp2-${crypto.randomUUID()}@t.dev`, ["jobs:read", "jobs:write"]);
+    const { id: cid } = await seedCompany({ name: "MCP Co" });
+    const sid = await seedSource(cid);
+    const jid = await seedJob(sid, cid);
+
     const { client } = await connect(key);
     {
-      const created = await client.callTool({
-        name: "create_project",
-        arguments: { name: "Via MCP" },
+      const listed = await client.callTool({
+        name: "list_jobs",
+        arguments: { sourceId: sid, limit: 10 },
       });
-      const project = (created.structuredContent as CallContent).project!;
-      expect(project.id).toMatch(/^prj_/);
+      expect((listed.structuredContent as CallContent).jobs!.map((j) => j.id)).toContain(jid);
 
-      const got = await client.callTool({ name: "get_project", arguments: { id: project.id } });
-      expect((got.structuredContent as CallContent).project!.name).toBe("Via MCP");
-
-      const patched = await client.callTool({
-        name: "update_project",
-        arguments: { id: project.id, status: "paused" },
+      const set = await client.callTool({
+        name: "set_job_status",
+        arguments: { id: jid, status: "retired" },
       });
-      expect((patched.structuredContent as CallContent).project!.status).toBe("paused");
-
-      const listed = await client.callTool({ name: "list_projects", arguments: { limit: 10 } });
-      expect((listed.structuredContent as CallContent).projects!.map((p) => p.id)).toContain(
-        project.id,
-      );
-
-      await client.callTool({ name: "delete_project", arguments: { id: project.id } });
-      const gone = await client.callTool({ name: "get_project", arguments: { id: project.id } });
-      expect(gone.isError).toBe(true);
-      expect((gone.structuredContent as CallContent).error!.code).toBe("not_found");
+      const updated = (set.structuredContent as CallContent).job!;
+      expect(updated.status).toBe("retired");
+      expect(updated.retireReason).toBe("manual");
     }
 
     const { client: ro } = await connect(
-      await makeKey(`mcp3-${crypto.randomUUID()}@t.dev`, ["projects:read"]),
+      await makeKey(`mcp3-${crypto.randomUUID()}@t.dev`, ["jobs:read"]),
     );
     {
-      const denied = await ro.callTool({ name: "create_project", arguments: { name: "nope" } });
+      const denied = await ro.callTool({
+        name: "set_job_status",
+        arguments: { id: jid, status: "active" },
+      });
       expect(denied.isError).toBe(true);
       expect((denied.structuredContent as CallContent).error!.code).toBe("insufficient_scope");
-      const ok = await ro.callTool({ name: "list_projects", arguments: { limit: 5 } });
+      const ok = await ro.callTool({ name: "list_jobs", arguments: { limit: 5 } });
       expect(ok.isError).toBeUndefined();
+    }
+
+    // A non-admin's key is refused even with the right scopes.
+    const { client: na } = await connect(
+      await makeKey(`mcp4n-${crypto.randomUUID()}@t.dev`, ["jobs:read"], false),
+    );
+    {
+      const denied = await na.callTool({ name: "list_jobs", arguments: {} });
+      expect(denied.isError).toBe(true);
+      expect((denied.structuredContent as CallContent).error!.code).toBe("forbidden");
     }
   });
 
   it("2025-era raw initialize (legacy clients) + RateLimit header on keyed calls", async () => {
-    const key = await makeKey(`mcp4-${crypto.randomUUID()}@t.dev`, ["projects:read"]);
+    const key = await makeKey(`mcp4-${crypto.randomUUID()}@t.dev`, ["jobs:read"]);
     const headers = new Headers(RAW_HEADERS);
     headers.set("authorization", `Bearer ${key}`);
     const r = await SELF.fetch("https://x/mcp", {

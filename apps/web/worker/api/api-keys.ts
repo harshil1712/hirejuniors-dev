@@ -33,16 +33,16 @@ apiKeysApi.openapi(
     const input = c.req.valid("json");
     const principal = c.get("principal");
     // Write implies read — a write-only key would break list/get.
-    const actions = input.scopes.includes("projects:write") ? ["read", "write"] : ["read"];
-    const storedScopes = input.scopes.includes("projects:write")
-      ? (["projects:read", "projects:write"] as const)
-      : (["projects:read"] as const);
+    const actions = input.scopes.includes("jobs:write") ? ["read", "write"] : ["read"];
+    const storedScopes = input.scopes.includes("jobs:write")
+      ? (["jobs:read", "jobs:write"] as const)
+      : (["jobs:read"] as const);
     const created = await createAuth(c.env).api.createApiKey({
       body: {
         name: input.name,
         userId: principal.userId,
         expiresIn: input.expiresInDays === null ? null : input.expiresInDays * 86400,
-        permissions: { projects: actions },
+        permissions: { jobs: actions },
       },
     });
     return c.json(

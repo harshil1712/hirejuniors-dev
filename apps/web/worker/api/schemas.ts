@@ -1,12 +1,67 @@
 import { z } from "@hono/zod-openapi";
 
-const PROJECT_EXAMPLE = {
-  id: "prj_9f2kLmQwXyZaBcDe",
-  name: "Website rebuild",
+const JOB_EXAMPLE = {
+  id: "job_9f2kLmQwXyZaBcDe",
+  slug: "software-engineer-intern-cloudflare-a1b2c3",
+  title: "Software Engineer Intern",
+  level: "internship",
+  employmentType: "INTERN",
+  workplace: "hybrid",
+  locationRaw: "Austin, TX, United States",
+  city: "Austin",
+  region: "TX",
+  countryCode: "US",
+  descriptionText: "Work on Cloudflare's network…",
+  applyUrl: "https://boards.greenhouse.io/cloudflare/jobs/123",
+  postedAt: "2026-02-02T17:45:00.000Z",
+  firstSeenAt: "2026-02-03T06:00:00.000Z",
+  lastSeenAt: "2026-02-09T06:00:00.000Z",
   status: "active",
-  notes: "Migrate to the new design system",
+  retiredAt: null,
+  retireReason: null,
+  missedRuns: 0,
+  company: { id: "cmp_cloudflare000001", name: "Cloudflare", slug: "cloudflare" },
+  sourceId: "src_cf_greenhouse01",
+} as const;
+
+const COMPANY_EXAMPLE = {
+  id: "cmp_cloudflare000001",
+  name: "Cloudflare",
+  slug: "cloudflare",
+  homepageUrl: "https://www.cloudflare.com",
+  logoUrl: null,
   createdAt: "2026-01-15T09:30:00.000Z",
   updatedAt: "2026-02-02T17:45:00.000Z",
+} as const;
+
+const SOURCE_EXAMPLE = {
+  id: "src_cf_greenhouse01",
+  company: { id: "cmp_cloudflare000001", name: "Cloudflare", slug: "cloudflare" },
+  platform: "greenhouse",
+  board: "cloudflare",
+  config: "{}",
+  includeAll: false,
+  enabled: true,
+  lastRunAt: "2026-02-09T06:00:00.000Z",
+  lastStatus: "succeeded",
+  lastError: null,
+  activeJobs: 42,
+  createdAt: "2026-01-15T09:30:00.000Z",
+  updatedAt: "2026-02-02T17:45:00.000Z",
+} as const;
+
+const RUN_EXAMPLE = {
+  id: "run_9f2kLmQwXyZaBcDe",
+  trigger: "schedule",
+  status: "succeeded",
+  startedAt: "2026-02-09T06:00:00.000Z",
+  finishedAt: "2026-02-09T06:04:12.000Z",
+  fetched: 812,
+  inserted: 34,
+  updated: 120,
+  reactivated: 2,
+  retired: 9,
+  error: null,
 } as const;
 
 const API_KEY_EXAMPLE = {
@@ -15,7 +70,7 @@ const API_KEY_EXAMPLE = {
   name: "Claude Code",
   start: "hj_9f2",
   expiresAt: "2027-01-15T09:30:00.000Z",
-  scopes: ["projects:read"],
+  scopes: ["jobs:read"],
 } as const;
 
 const ME_EXAMPLE = {
@@ -23,57 +78,349 @@ const ME_EXAMPLE = {
   email: "you@example.com",
   name: "You",
   keyId: "k_2aF9xQzLmNpRwVbCtYsEuHgJdKiO",
-  scopes: ["projects:read"],
+  scopes: ["jobs:read"],
 } as const;
 
-export const ProjectStatus = z
-  .enum(["active", "paused", "archived"])
-  .openapi("ProjectStatus", { example: "active" });
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
 
-export const Project = z
+export const JobStatus = z.enum(["active", "retired"]).openapi("JobStatus", { example: "active" });
+
+export const JobLevel = z
+  .enum(["internship", "apprenticeship", "graduate", "junior"])
+  .openapi("JobLevel", { example: "internship" });
+
+export const Job = z
   .object({
-    id: z.string().openapi({ example: "prj_9f2kLmQwXyZaBcDe" }),
-    name: z.string().openapi({ example: "Website rebuild" }),
-    status: ProjectStatus,
-    notes: z.string().openapi({ example: "Migrate to the new design system" }),
-    createdAt: z.iso.datetime().openapi({ example: "2026-01-15T09:30:00.000Z" }),
-    updatedAt: z.iso.datetime().openapi({ example: "2026-02-02T17:45:00.000Z" }),
+    id: z.string().openapi({ example: JOB_EXAMPLE.id }),
+    slug: z.string().openapi({ example: JOB_EXAMPLE.slug }),
+    title: z.string().openapi({ example: JOB_EXAMPLE.title }),
+    level: JobLevel,
+    employmentType: z.string().nullable().openapi({ example: "INTERN" }),
+    workplace: z.string().nullable().openapi({ example: "hybrid" }),
+    locationRaw: z.string().openapi({ example: JOB_EXAMPLE.locationRaw }),
+    city: z.string().nullable().openapi({ example: "Austin" }),
+    region: z.string().nullable().openapi({ example: "TX" }),
+    countryCode: z.string().nullable().openapi({ example: "US" }),
+    descriptionHtml: z.string().nullable(),
+    descriptionText: z.string().openapi({ example: JOB_EXAMPLE.descriptionText }),
+    applyUrl: z.string().openapi({ example: JOB_EXAMPLE.applyUrl }),
+    postedAt: z.iso.datetime().nullable().openapi({ example: JOB_EXAMPLE.postedAt }),
+    sourceUpdatedAt: z.iso.datetime().nullable().openapi({ example: JOB_EXAMPLE.postedAt }),
+    validThrough: z.iso.datetime().nullable().openapi({ example: null }),
+    firstSeenAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.firstSeenAt }),
+    lastSeenAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
+    lastCheckedAt: z.iso.datetime().nullable().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
+    status: JobStatus,
+    retiredAt: z.iso.datetime().nullable().openapi({ example: null }),
+    retireReason: z
+      .enum(["missing_from_feed", "link_dead", "expired", "manual"])
+      .nullable()
+      .openapi({ example: null }),
+    missedRuns: z.number().int().openapi({ example: 0 }),
+    createdAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.firstSeenAt }),
+    updatedAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
+    companyId: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
+    sourceId: z.string().openapi({ example: SOURCE_EXAMPLE.id }),
+    company: z
+      .object({
+        id: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
+        name: z.string().openapi({ example: "Cloudflare" }),
+        slug: z.string().openapi({ example: "cloudflare" }),
+      })
+      .openapi({ example: JOB_EXAMPLE.company }),
   })
-  .openapi("Project");
+  .openapi("Job");
 
-export const ProjectCreate = z
+export const JobListQuery = z
   .object({
-    name: z.string().trim().min(1).max(80).openapi({ example: "Website rebuild" }),
-    status: ProjectStatus.optional(),
-    notes: z.string().max(2000).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z.string().optional(),
+    status: JobStatus.default("active"),
+    level: JobLevel.optional(),
+    country: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/, "ISO alpha-2 country code")
+      .optional()
+      .openapi({ example: "US" }),
+    companyId: z.string().optional(),
+    sourceId: z.string().optional(),
+    q: z.string().trim().min(1).max(120).optional().openapi({ example: "intern" }),
   })
-  .openapi("ProjectCreate");
+  .openapi("JobListQuery");
 
-export const ProjectPatchFields = z.object({
-  name: z.string().trim().min(1).max(80).optional(),
-  status: ProjectStatus.optional(),
-  notes: z.string().max(2000).optional(),
+export const JobUpdate = z
+  .object({ status: JobStatus })
+  .openapi("JobUpdate", { example: { status: "retired" } });
+
+export const JobList = z
+  .object({
+    data: z.array(Job),
+    nextCursor: z.string().nullable().openapi({ example: "MTc3MDAwMDAwMDAwMDpqb2JfOWYyaw" }),
+  })
+  .openapi("JobList");
+
+export const JobResult = z.object({ data: Job }).openapi("JobResult", {
+  example: { data: JOB_EXAMPLE },
 });
 
-export const ProjectUpdate = ProjectPatchFields.refine(
+// ---------------------------------------------------------------------------
+// Companies
+// ---------------------------------------------------------------------------
+
+export const Company = z
+  .object({
+    id: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
+    name: z.string().openapi({ example: "Cloudflare" }),
+    slug: z.string().openapi({ example: "cloudflare" }),
+    homepageUrl: z.string().nullable().openapi({ example: "https://www.cloudflare.com" }),
+    logoUrl: z.string().nullable().openapi({ example: null }),
+    createdAt: z.iso.datetime().openapi({ example: COMPANY_EXAMPLE.createdAt }),
+    updatedAt: z.iso.datetime().openapi({ example: COMPANY_EXAMPLE.updatedAt }),
+  })
+  .openapi("Company");
+
+export const CompanyCreate = z
+  .object({
+    name: z.string().trim().min(1).max(120).openapi({ example: "Cloudflare" }),
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase slug, dash-separated")
+      .optional()
+      .openapi({ example: "cloudflare" }),
+    homepageUrl: z.url().optional().openapi({ example: "https://www.cloudflare.com" }),
+    logoUrl: z.url().optional(),
+  })
+  .openapi("CompanyCreate");
+
+export const CompanyPatchFields = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  slug: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase slug, dash-separated")
+    .optional(),
+  homepageUrl: z.url().nullable().optional(),
+  logoUrl: z.url().nullable().optional(),
+});
+
+export const CompanyUpdate = CompanyPatchFields.refine(
   (patch) => Object.values(patch).some((v) => v !== undefined),
   { message: "at least one field is required" },
-).openapi("ProjectUpdate", { example: { status: "paused" } });
+).openapi("CompanyUpdate", { example: { homepageUrl: "https://www.cloudflare.com" } });
 
-export const ProjectListQuery = z
+export const CompanyList = z.object({ data: z.array(Company) }).openapi("CompanyList", {
+  example: { data: [COMPANY_EXAMPLE] },
+});
+export const CompanyResult = z.object({ data: Company }).openapi("CompanyResult", {
+  example: { data: COMPANY_EXAMPLE },
+});
+
+// ---------------------------------------------------------------------------
+// Sources
+// ---------------------------------------------------------------------------
+
+export const SourcePlatform = z
+  .enum(["greenhouse", "lever", "ashby", "amazon_jobs"])
+  .openapi("SourcePlatform", { example: "greenhouse" });
+
+export const Source = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    id: z.string().openapi({ example: SOURCE_EXAMPLE.id }),
+    company: z
+      .object({
+        id: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
+        name: z.string().openapi({ example: "Cloudflare" }),
+        slug: z.string().openapi({ example: "cloudflare" }),
+      })
+      .openapi({ example: SOURCE_EXAMPLE.company }),
+    platform: SourcePlatform,
+    board: z.string().openapi({ example: "cloudflare" }),
+    /** Platform-specific JSON — validated by that platform's adapter. */
+    config: z.string().openapi({ example: "{}" }),
+    includeAll: z.boolean().openapi({ example: false }),
+    enabled: z.boolean().openapi({ example: true }),
+    lastRunAt: z.iso.datetime().nullable().openapi({ example: SOURCE_EXAMPLE.lastRunAt }),
+    lastStatus: z.enum(["succeeded", "failed"]).nullable().openapi({ example: "succeeded" }),
+    lastError: z.string().nullable().openapi({ example: null }),
+    activeJobs: z.number().int().openapi({ example: 42 }),
+    createdAt: z.iso.datetime().openapi({ example: SOURCE_EXAMPLE.createdAt }),
+    updatedAt: z.iso.datetime().openapi({ example: SOURCE_EXAMPLE.updatedAt }),
+  })
+  .openapi("Source");
+
+/** Board slug as used in the platform API path — no `/`, `?`, `..` tricks. */
+const BoardSlug = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "letters, digits, dot, dash or underscore");
+
+export const SourceCreate = z
+  .object({
+    companyId: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
+    platform: SourcePlatform,
+    board: BoardSlug.openapi({ example: "cloudflare" }),
+    config: z.string().max(4000).default("{}").openapi({ example: "{}" }),
+    includeAll: z.boolean().default(false),
+    enabled: z.boolean().default(true),
+  })
+  .openapi("SourceCreate");
+
+export const SourcePatchFields = z.object({
+  board: BoardSlug.optional(),
+  config: z.string().max(4000).optional(),
+  includeAll: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const SourceUpdate = SourcePatchFields.refine(
+  (patch) => Object.values(patch).some((v) => v !== undefined),
+  { message: "at least one field is required" },
+).openapi("SourceUpdate", { example: { enabled: false } });
+
+export const SourcePreview = z
+  .object({
+    platform: SourcePlatform,
+    board: BoardSlug.openapi({ example: "cloudflare" }),
+    config: z.string().max(4000).default("{}").openapi({ example: "{}" }),
+    includeAll: z.boolean().default(false),
+  })
+  .openapi("SourcePreview");
+
+export const SourcePreviewResult = z
+  .object({
+    data: z.object({
+      fetched: z.number().int().openapi({ example: 812 }),
+      kept: z.number().int().openapi({ example: 34 }),
+      sample: z
+        .array(
+          z.object({
+            title: z.string().openapi({ example: "Software Engineer Intern" }),
+            level: JobLevel.nullable(),
+            locationRaw: z.string().openapi({ example: "Austin, TX, United States" }),
+            countryCode: z.string().nullable().openapi({ example: "US" }),
+          }),
+        )
+        .openapi({ example: [] }),
+    }),
+  })
+  .openapi("SourcePreviewResult", {
+    example: {
+      data: {
+        fetched: 812,
+        kept: 34,
+        sample: [
+          {
+            title: "Software Engineer Intern",
+            level: "internship",
+            locationRaw: "Austin, TX, United States",
+            countryCode: "US",
+          },
+        ],
+      },
+    },
+  });
+
+export const SourceList = z.object({ data: z.array(Source) }).openapi("SourceList", {
+  example: { data: [SOURCE_EXAMPLE] },
+});
+export const SourceResult = z.object({ data: Source }).openapi("SourceResult", {
+  example: { data: SOURCE_EXAMPLE },
+});
+
+// ---------------------------------------------------------------------------
+// Runs
+// ---------------------------------------------------------------------------
+
+export const IngestRun = z
+  .object({
+    id: z.string().openapi({ example: RUN_EXAMPLE.id }),
+    trigger: z.enum(["schedule", "manual"]).openapi({ example: "schedule" }),
+    status: z.enum(["running", "succeeded", "partial", "failed"]).openapi({
+      example: "succeeded",
+    }),
+    startedAt: z.iso.datetime().openapi({ example: RUN_EXAMPLE.startedAt }),
+    finishedAt: z.iso.datetime().nullable().openapi({ example: RUN_EXAMPLE.finishedAt }),
+    fetched: z.number().int().openapi({ example: 812 }),
+    inserted: z.number().int().openapi({ example: 34 }),
+    updated: z.number().int().openapi({ example: 120 }),
+    reactivated: z.number().int().openapi({ example: 2 }),
+    retired: z.number().int().openapi({ example: 9 }),
+    error: z.string().nullable().openapi({ example: null }),
+  })
+  .openapi("IngestRun");
+
+export const SourceRun = z
+  .object({
+    id: z.string().openapi({ example: "srn_9f2kLmQwXyZaBcDe" }),
+    sourceId: z.string().openapi({ example: SOURCE_EXAMPLE.id }),
+    sourceName: z.string().openapi({ example: "greenhouse/cloudflare" }),
+    companyName: z.string().openapi({ example: "Cloudflare" }),
+    status: z.enum(["succeeded", "failed"]).openapi({ example: "succeeded" }),
+    fetched: z.number().int().openapi({ example: 812 }),
+    kept: z.number().int().openapi({ example: 34 }),
+    inserted: z.number().int().openapi({ example: 34 }),
+    updated: z.number().int().openapi({ example: 120 }),
+    reactivated: z.number().int().openapi({ example: 2 }),
+    retired: z.number().int().openapi({ example: 9 }),
+    error: z.string().nullable().openapi({ example: null }),
+    startedAt: z.iso.datetime().openapi({ example: RUN_EXAMPLE.startedAt }),
+    finishedAt: z.iso.datetime().openapi({ example: RUN_EXAMPLE.finishedAt }),
+  })
+  .openapi("SourceRun");
+
+export const RunListQuery = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.string().optional(),
-    status: ProjectStatus.optional(),
   })
-  .openapi("ProjectListQuery");
+  .openapi("RunListQuery");
 
-export const ProjectList = z
+export const RunList = z
   .object({
-    data: z.array(Project),
-    nextCursor: z.string().nullable().openapi({ example: "MTc3MDAwMDAwMDAwMDpwcmpfOWYyaw" }),
+    data: z.array(IngestRun),
+    nextCursor: z.string().nullable().openapi({ example: "MTc3MDAwMDAwMDAwMDpydW5fOWYyaw" }),
   })
-  .openapi("ProjectList");
+  .openapi("RunList");
+
+export const RunDetail = z
+  .object({ data: IngestRun.extend({ sourceRuns: z.array(SourceRun) }) })
+  .openapi("RunDetail", { example: { data: { ...RUN_EXAMPLE, sourceRuns: [] } } });
+
+export const RunTriggered = z
+  .object({ data: z.object({ instanceId: z.string().openapi({ example: "01JXYZ…" }) }) })
+  .openapi("RunTriggered", { example: { data: { instanceId: "01JXYZ" } } });
+
+// ---------------------------------------------------------------------------
+// Dashboard summary (session-only surface)
+// ---------------------------------------------------------------------------
+
+export const DashboardSummary = z
+  .object({
+    data: z.object({
+      activeJobs: z.number().int().openapi({ example: 142 }),
+      retiredLast7Days: z.number().int().openapi({ example: 6 }),
+      failingSources: z.number().int().openapi({ example: 1 }),
+      lastRun: IngestRun.nullable(),
+    }),
+  })
+  .openapi("DashboardSummary", {
+    example: {
+      data: { activeJobs: 142, retiredLast7Days: 6, failingSources: 1, lastRun: RUN_EXAMPLE },
+    },
+  });
+
+// ---------------------------------------------------------------------------
+// Errors / keys / identity
+// ---------------------------------------------------------------------------
 
 export const ErrorDetail = z
   .object({
@@ -85,38 +432,24 @@ export const ErrorDetail = z
 export const ErrorBody = z
   .object({
     code: z.string().openapi({ example: "validation_failed" }),
-    message: z.string().openapi({ example: "name must be 1-80 characters" }),
+    message: z.string().openapi({ example: "name must be 1-120 characters" }),
     requestId: z.string().openapi({ example: "0f8fad5b-d9cb-469f-a165-70867728950e" }),
     details: z.array(ErrorDetail).optional(),
   })
   .openapi("ErrorBody");
-
-export const ProjectResult = z.object({ data: Project }).openapi("ProjectResult", {
-  example: { data: PROJECT_EXAMPLE },
-});
 
 /** The uniform error envelope: every non-2xx response body. */
 export const ErrorResponse = z.object({ error: ErrorBody }).openapi("ErrorResponse", {
   example: {
     error: {
       code: "not_found",
-      message: "No such project: prj_9f2kLmQwXyZaBcDe",
+      message: "No such job: job_9f2kLmQwXyZaBcDe",
       requestId: "0f8fad5b-d9cb-469f-a165-70867728950e",
     },
   },
 });
 
-export type ProjectStatus = z.infer<typeof ProjectStatus>;
-export type Project = z.infer<typeof Project>;
-export type ProjectCreate = z.infer<typeof ProjectCreate>;
-export type ProjectUpdate = z.infer<typeof ProjectUpdate>;
-export type ProjectListQuery = z.infer<typeof ProjectListQuery>;
-export type ProjectList = z.infer<typeof ProjectList>;
-export type ErrorBody = z.infer<typeof ErrorBody>;
-
-export const Scope = z
-  .enum(["projects:read", "projects:write"])
-  .openapi("Scope", { example: "projects:read" });
+export const Scope = z.enum(["jobs:read", "jobs:write"]).openapi("Scope", { example: "jobs:read" });
 
 export const ApiKeyCreate = z
   .object({
@@ -158,6 +491,26 @@ export const MeResult = z.object({ data: Me }).openapi("MeResult", {
   example: { data: ME_EXAMPLE },
 });
 
+export type JobStatus = z.infer<typeof JobStatus>;
+export type JobLevel = z.infer<typeof JobLevel>;
+export type Job = z.infer<typeof Job>;
+export type JobListQuery = z.infer<typeof JobListQuery>;
+export type JobUpdate = z.infer<typeof JobUpdate>;
+export type JobList = z.infer<typeof JobList>;
+export type Company = z.infer<typeof Company>;
+export type CompanyCreate = z.infer<typeof CompanyCreate>;
+export type CompanyUpdate = z.infer<typeof CompanyUpdate>;
+export type SourcePlatform = z.infer<typeof SourcePlatform>;
+export type Source = z.infer<typeof Source>;
+export type SourceCreate = z.infer<typeof SourceCreate>;
+export type SourceUpdate = z.infer<typeof SourceUpdate>;
+export type SourcePreview = z.infer<typeof SourcePreview>;
+export type SourcePreviewResult = z.infer<typeof SourcePreviewResult>;
+export type IngestRun = z.infer<typeof IngestRun>;
+export type SourceRun = z.infer<typeof SourceRun>;
+export type RunListQuery = z.infer<typeof RunListQuery>;
+export type DashboardSummary = z.infer<typeof DashboardSummary>;
+export type ErrorBody = z.infer<typeof ErrorBody>;
 export type Scope = z.infer<typeof Scope>;
 export type ApiKeyCreate = z.infer<typeof ApiKeyCreate>;
 export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
