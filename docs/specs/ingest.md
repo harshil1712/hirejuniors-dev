@@ -109,18 +109,50 @@ Two inputs, one pipeline. Both end in `probe` → create company + source.
 line, normalised to lower-case bare host, deduped) → `discovery_candidate`
 rows with `origin = 'manual'`. For each queued manual candidate:
 
-1. Fetch, in order, stopping at the first that yields an ATS link:
-   `https://{d}/careers`, `https://{d}/jobs`, `https://careers.{d}`,
-   `https://{d}` (GET, `redirect: "follow"`, 10 s timeout, first 512 KB).
-2. Scan the HTML with these patterns (first match wins, in this order):
+1. For each of, in order, `https://{d}/careers`, `https://{d}/jobs`,
+   `https://careers.{d}`, `https://{d}` — stopping at the first that yields
+   an ATS link — get the page's links with **Browser Run `links`** (rendered,
+   so script-injected boards and iframes count; see §Browser Run). If the
+   Browser Run call errors, fall back to a plain `fetch` (GET,
+   `redirect: "follow"`, 10 s timeout, first 512 KB) and scan the raw HTML.
+2. Scan the links (joined with `\n`) or HTML with these patterns (first
+   match wins, in this order):
    - Greenhouse: `(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board\?for=)?([A-Za-z0-9_-]+)`
    - Lever: `jobs\.lever\.co/([A-Za-z0-9_.-]+)`
    - Ashby: `jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)`
      Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
 3. If no link is found, guess `board = first label of d` (e.g. `stripe` from
    `stripe.com`) and probe Greenhouse, Lever, Ashby in that order.
-4. First successful `probe` → `found`. None → `not_found`. Network errors on
-   every attempt → `failed` (retried next run while `attempts < 3`).
+4. First successful `probe` → `found`. Network errors on every attempt →
+   `failed` (retried next run while `attempts < 3`).
+5. **Careers-page fallback.** No ATS board found, but one of the step-1 pages
+   rendered → run §Careers-page listing parse on it (first rendered page in
+   step-1 order). If it yields ≥ 1 job link → `found` with a
+   `careers_page` source (`board` = normalised listing URL, `config =
+   {"listingUrl": "<url>"}`). If it yields 0 job links, take the one-hop
+   choice below and, if a link is chosen, parse that page instead (and use
+   it as `listingUrl`). Still nothing → `not_found`.
+
+   One-hop choice: collect up to 40 same-site links from the page's
+   rendered Markdown, then one `clef-flash` call with `state` = the
+   numbered list `"{i}. {text} → {url}"` and the question:
+
+   ```json
+   {
+     "open_positions": {
+       "type": "choice",
+       "instructions": "Which link leads to the page that lists the company's open job positions?",
+       "criteria": {
+         "link_0": "...",
+         "link_1": "...",
+         "none": "None of these links lists open positions"
+       }
+     }
+   }
+   ```
+
+   where each `link_i` criterion is `"{text} → {url}"`. Accept the chosen
+   link if it isn't `none` and its probability ≥ 0.60.
 
 **Crawl (Common Crawl index).** Best-effort, never fails the run. Hosts:
 `boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`,
@@ -358,10 +390,12 @@ they leave the queue.
 1. GET `apply_url` with `redirect: "manual"`, follow at most 3 redirects
    manually (resolving relative `Location`), 10 s timeout per hop.
 2. 404 or 410 at any hop → retire `link_dead`.
-3. Final 2xx with `text/html` → `htmlToText(body)` first 6000 chars. If the
-   text is **< 200 characters** (JS-rendered page), just stamp
-   `last_checked_at`. Otherwise call `clef-flash` with that text as `state`
-   and one question:
+3. Final 2xx with `text/html` → get the page text with **Browser Run
+   `markdown`** on the final URL (rendered, so JS-built pages such as Ashby
+   job pages have content); if that call errors, fall back to
+   `htmlToText(body)`. Use the first 6000 chars. If the text is **< 200
+   characters**, just stamp `last_checked_at`. Otherwise call `clef-flash`
+   with that text as `state` and one question:
 
    ```json
    {
@@ -389,7 +423,8 @@ Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 1. `start` — insert `ingest_run`.
 2. `discover:crawl:<host>` — one step per host, best-effort (caught).
 3. `discover:<n>` — probe queued candidates (≤ 10 steps × 15).
-4. `load sources` — enabled sources + `no_junior_roles` sources due for retry.
+4. `load sources` — enabled sources + `no_junior_roles` sources due for retry
+   (re-enabled as trial).
 5. `ingest:<sourceId>` — per source (retries 3): fetch → shrink guard →
    pre-filter → upsert (new/changed → `pending`) → feed diff.
 6. `classify:<n>` — ≤ 25 steps × 20 pending jobs: decision + extraction.
@@ -397,7 +432,7 @@ Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 8. `expire`.
 9. `linkcheck:select`, `linkcheck:<n>` — link + page check, breaker.
 10. `finish` — totals (incl. `classified`, `rejected`, `review`,
-    `discovered`, `ai_input_tokens`), status `succeeded` / `partial` /
+    `discovered`, `ai_input_tokens`, `browser_ms`), status `succeeded` / `partial` /
     `failed`.
 
 Step outputs stay small (counts/ids only). Default limit is 10,000 steps per
@@ -424,7 +459,10 @@ questions)`, `extract(state, fields, referenceDate)`) — the test seam, like
   decisions are sticky across content changes. API/MCP: `jobs_approve`,
   `jobs_reject`.
 - **Sources page**: show `origin`, `trial`, `disabled_reason`.
-- **Runs page**: show the new totals including `ai_input_tokens`.
+- **Runs page**: show the new totals including `ai_input_tokens` and
+  `browser_ms`.
+- **Sources page**: `careers_page` sources show their listing URL; the add
+  source form accepts platform `careers_page` with a listing URL.
 
 ## Site (`apps/site`)
 
@@ -436,10 +474,78 @@ questions)`, `extract(state, fields, referenceDate)`) — the test seam, like
 - Job page stub: show salary (formatted with `Intl.NumberFormat`, currency,
   "/ year" etc.) and "Grad year" when present.
 
+## Browser Run (`browser.ts`)
+
+Browser Run is the primitive for **reading web pages** (discovery, page
+check, careers-page sources). Platform JSON feeds and the Common Crawl index
+stay on plain `fetch` — they are APIs, and a browser would only add cost and
+lose their stable ids.
+
+- Binding `BROWSER` on the jobs worker (runtime type `BrowserRun`). Calls:
+  `env.BROWSER.quickAction("links", { url })` and
+  `env.BROWSER.quickAction("markdown", { url })`; each returns a `Response`
+  whose JSON is `{ success, result }` (`links` → `string[]` of absolute URLs,
+  `markdown` → `string`).
+- `browser.ts` exposes a seam like `ai.ts`:
+  `interface Browser { links(url): Promise<string[]>; markdown(url):
+  Promise<string> }`, built from the binding. Tests pass a hand-written fake.
+- Each call: 30 s timeout (`AbortSignal.timeout` around the call); on HTTP
+  429 retry up to 2 times after 2 s and 6 s; any other failure throws.
+  Sum the `X-Browser-Ms-Used` response header into the step's returned
+  counts → `ingest_run.browser_ms` (new integer column, default 0).
+- Calls are sequential (no parallel fan-out) to stay inside rate limits.
+
+## Careers-page sources (`platforms/careers-page.ts`)
+
+New platform `careers_page` (add to the `source.platform` enum) for
+companies with no supported job board. `board` = the listing URL normalised
+(lower-case host, no query/fragment, no trailing slash); `config =
+{"listingUrl": string}`. The adapter receives `{ fetcher, browser, ai }`
+(extend the adapter context; the JSON platforms ignore `browser`/`ai`).
+
+**Listing parse** (used by discovery step 5 and by every ingest):
+
+1. `browser.markdown(listingUrl)`. Extract Markdown links `[text](url)`;
+   resolve relative URLs against the listing URL; drop `mailto:`, `tel:`,
+   `#` anchors, links with empty text, and links whose host is not the
+   listing's registrable domain or a known job host (`myworkdayjobs.com`,
+   `greenhouse.io`, `lever.co`, `ashbyhq.com`, `smartrecruiters.com`,
+   `workable.com`, `recruitee.com`, `personio.de`, `personio.com`). Dedupe by
+   normalised URL, keep the first 200.
+2. In batches of up to 60 links, one `clef-flash` call per batch: `state` =
+   `"Links from the careers page {listingUrl}:\n"` + numbered list
+   `"{i}. {text} → {url}"`, and one `noul` question per link, id `l{i}`:
+   `"instructions": "Is link {i} a link to one individual job posting (not a category, search, team, location or general careers page)?"`.
+3. A link with `noul ≥ 0.70` is a job link.
+
+**Ingest** for a `careers_page` source:
+
+- The job links from the listing parse are the feed: `externalId` =
+  normalised job URL, `title` = link text (trimmed, whitespace collapsed),
+  `applyUrl` = job URL. Feed diff and the shrink guard apply as for any
+  source.
+- For job links not yet stored (new), fetch details: `browser.markdown(url)`
+  → `descriptionHtml` = `markdownToHtml(md)` (a small pure function in
+  `html.ts`: HTML-escape everything, blank-line-separated blocks → `<p>`,
+  consecutive lines starting `- `/`* ` → `<ul><li>`, lines starting `#`… →
+  `<h3>`; no raw HTML passes through). Then one `clairic` call on the
+  Markdown with fields `{"location": {"type": "text", "instructions": "Where
+  the job is based, as written on the page"}, "posted_date": {"type":
+  "date", "instructions": "Date the job was posted"}}` → `locationRaw`
+  (value with confidence ≥ 0.80, else `""`), `postedAt` (same gate).
+- At most **30 new job pages per careers-page source per run**; links beyond
+  that are left out of this run's upsert and **excluded from the feed diff**
+  (they are not "missing", just not fetched yet). Existing jobs whose link is
+  still listed are only re-seen (no page fetch).
+- From there the job follows the normal path: pre-filter → `pending` →
+  classify → extract.
+- Ingest step timeout for careers-page sources: 10 minutes.
+
 ## Infra (`alchemy.run.ts`)
 
-Add `AI: Cloudflare.Workers.AI()` to the jobs worker `env`. No other infra.
-Jobs worker still not created when `PR_NAME` is set.
+Add `AI: Cloudflare.Workers.AI()` and `BROWSER: Cloudflare.Browser()` to the
+jobs worker `env`. No other infra. Jobs worker still not created when
+`PR_NAME` is set.
 
 ## Cost envelope
 
@@ -447,3 +553,6 @@ Pricing (2026-11): clef-flash $0.038, clef $0.24, clairic $0.10 per M input
 tokens; no output-token charge. At ~1.5k tokens per job and 2,000
 new/changed jobs a week, expect well under $1/week. `ai_input_tokens` on
 each run is the check.
+
+Browser Run (Workers Paid): 10 browser-hours/month included, then $0.09/h.
+`ingest_run.browser_ms` on each run is the check.
