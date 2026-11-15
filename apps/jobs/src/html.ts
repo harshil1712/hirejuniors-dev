@@ -44,15 +44,6 @@ export function decodeEntities(html: string): string {
   });
 }
 
-/** Escape all HTML special characters — nothing raw passes through. */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /** Plain text for `description_text` — strip tags, decode, collapse, cap. */
 export function htmlToText(html: string, max = 500): string {
   const text = decodeEntities(html)

@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     "./platforms": "./src/platforms/index.ts",
+    "./discover": "./src/discover.ts",
+    "./slug": "./src/slug.ts",
     "./classify": "./src/classify.ts",
     "./location": "./src/location.ts",
     "./countries": "./src/countries.ts"

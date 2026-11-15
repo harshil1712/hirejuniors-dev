@@ -13,10 +13,6 @@ export function chunks<T>(rows: T[], size: number): T[][] {
   return out;
 }
 
-export function enabledSources(db: Db) {
-  return db.select({ id: source.id }).from(source).where(eq(source.enabled, true));
-}
-
 export function sourceWithCompany(db: Db, sourceId: string) {
   return db
     .select({ source, company })

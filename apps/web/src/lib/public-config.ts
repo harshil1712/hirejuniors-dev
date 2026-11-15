@@ -25,7 +25,6 @@ function load(): Promise<PublicConfig> {
 }
 
 /** Awaitable copy for route guards (beforeLoad) that can't use the hook. */
-export const loadPublicConfig = load;
 
 /**
  * Unauthenticated feature flags from GET /api/public-config. Fetched once per

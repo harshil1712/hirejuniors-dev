@@ -6,6 +6,7 @@ import { json } from "./errors";
 import { ErrorResponse } from "./schemas";
 import * as svc from "../services/discovery";
 import { DiscoveryAdd, DiscoveryAddResult, DiscoveryList } from "./schemas";
+import { addManualCandidates } from "@hirejuniors/jobs/discover";
 
 const errors = (...codes: number[]) =>
   Object.fromEntries(
@@ -55,6 +56,6 @@ discoveryApi.openapi(
   async (c) => {
     const { domains } = c.req.valid("json");
     const db = drizzle(c.env.DB);
-    return c.json({ data: { added: await svc.addDomains(db, domains) } }, 200);
+    return c.json({ data: { added: await addManualCandidates(db, domains) } }, 200);
   },
 );

@@ -1,6 +1,5 @@
 // Discovery candidates — list + manual domain adds (spec §Dashboard).
 import { desc, eq, sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { discoveryCandidate } from "@hirejuniors/db/schema";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
@@ -46,35 +45,4 @@ function toApi(r: typeof discoveryCandidate.$inferSelect) {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
-}
-
-const HOSTNAME = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
-
-export function normalizeDomain(input: string): string | null {
-  let d = input.trim().toLowerCase();
-  if (!d) return null;
-  d = d
-    .replace(/^https?:\/\//, "")
-    .split("/")[0]
-    .split("?")[0];
-  return HOSTNAME.test(d) ? d : null;
-}
-
-/** Add manual candidates (deduped, INSERT OR IGNORE on unique input). */
-export async function addDomains(db: Db, domains: string[]): Promise<number> {
-  const unique = [
-    ...new Set(
-      domains.flatMap((d) => {
-        const n = normalizeDomain(d);
-        return n ? [n] : [];
-      }),
-    ),
-  ];
-  for (const input of unique) {
-    await db
-      .insert(discoveryCandidate)
-      .values({ id: `dsc_${nanoid(16)}`, origin: "manual", input })
-      .onConflictDoNothing();
-  }
-  return unique.length;
 }

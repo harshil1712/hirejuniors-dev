@@ -1,7 +1,7 @@
 // Jobs pipeline schema — migration packages/db/migrations/0004_jobs.sql
 // mirrors this file (hand-maintained, see migrations/README.md).
 import { nanoid } from "nanoid";
-import { desc, relations } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const id = (prefix: string) =>
@@ -200,28 +200,3 @@ export const sourceRun = sqliteTable("source_run", {
   startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
   finishedAt: integer("finished_at", { mode: "timestamp_ms" }).notNull(),
 });
-
-export const companyRelations = relations(company, ({ many }) => ({
-  sources: many(source),
-  jobs: many(job),
-}));
-
-export const sourceRelations = relations(source, ({ one, many }) => ({
-  company: one(company, { fields: [source.companyId], references: [company.id] }),
-  jobs: many(job),
-  runs: many(sourceRun),
-}));
-
-export const jobRelations = relations(job, ({ one }) => ({
-  source: one(source, { fields: [job.sourceId], references: [source.id] }),
-  company: one(company, { fields: [job.companyId], references: [company.id] }),
-}));
-
-export const ingestRunRelations = relations(ingestRun, ({ many }) => ({
-  sourceRuns: many(sourceRun),
-}));
-
-export const sourceRunRelations = relations(sourceRun, ({ one }) => ({
-  run: one(ingestRun, { fields: [sourceRun.runId], references: [ingestRun.id] }),
-  source: one(source, { fields: [sourceRun.sourceId], references: [source.id] }),
-}));

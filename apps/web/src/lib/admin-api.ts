@@ -141,14 +141,6 @@ export function createCompany(input: CompanyCreate): Promise<Company> {
   return request<{ data: Company }>("POST", "/api/companies", input).then((r) => r.data);
 }
 
-export function updateCompany(id: string, patch: CompanyUpdate): Promise<Company> {
-  return request<{ data: Company }>(
-    "PATCH",
-    `/api/companies/${encodeURIComponent(id)}`,
-    patch,
-  ).then((r) => r.data);
-}
-
 export function listSources(): Promise<Source[]> {
   return request<{ data: Source[] }>("GET", "/api/sources").then((r) => r.data);
 }

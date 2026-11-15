@@ -486,7 +486,11 @@ export const JobApprove = z
 export const DiscoveryAdd = z
   .object({
     domains: z
-      .array(z.string().regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "valid hostname"))
+      .array(
+        z
+          .string()
+          .regex(/^(?:[a-z0-9][a-z0-9.-]*\.[a-z]{2,}|https?:\/\/\S+)$/i, "hostname or board URL"),
+      )
       .min(1)
       .max(500),
   })

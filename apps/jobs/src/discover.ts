@@ -8,6 +8,7 @@ import { chunks } from "@hirejuniors/db/queries";
 import type { Db } from "./ingest";
 import type { BatchItem } from "drizzle-orm/batch";
 import { adapterFor, type Fetcher } from "./platforms";
+import { slugify } from "./slug";
 import type { Browser } from "./browser";
 
 // Spec §Discovery — verbatim patterns, first match wins, in this order.
@@ -44,16 +45,7 @@ async function fetchText(fetcher: Fetcher, url: string): Promise<string | null> 
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return "";
-    const reader = res.body?.getReader();
-    if (!reader) return (await res.text()).slice(0, 512 * 1024);
-    let out = "";
-    const dec = new TextDecoder();
-    while (out.length < 512 * 1024) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      out += dec.decode(value, { stream: true });
-    }
-    return out.slice(0, 512 * 1024);
+    return (await res.text()).slice(0, 512 * 1024);
   } catch {
     return null;
   }
@@ -64,10 +56,7 @@ function titleCase(s: string): string {
 }
 
 async function uniqueCompanySlug(db: Db, name: string): Promise<string> {
-  const base = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const base = slugify(name);
   for (let n = 0; n < 100; n++) {
     const slug = n === 0 ? base : `${base}-${n + 1}`;
     const hit = await db

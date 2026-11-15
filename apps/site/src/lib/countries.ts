@@ -1,6 +1,6 @@
 // Country display names and URL slugs. Per docs/specs/site.md both derive
 // from Intl.DisplayNames, so slug and label can never disagree.
-import { COUNTRY_NAME_TO_ALPHA2 } from "@hirejuniors/jobs/countries";
+import { ALPHA2_CODES } from "@hirejuniors/jobs/countries";
 
 const NAMES = new Intl.DisplayNames(["en"], { type: "region" });
 
@@ -19,7 +19,7 @@ export function countrySlug(code: string): string {
 }
 
 const SLUG_TO_CODE = new Map<string, string>();
-for (const code of COUNTRY_NAME_TO_ALPHA2.values()) {
+for (const code of ALPHA2_CODES) {
   const slug = countrySlug(code);
   if (!SLUG_TO_CODE.has(slug)) SLUG_TO_CODE.set(slug, code);
 }

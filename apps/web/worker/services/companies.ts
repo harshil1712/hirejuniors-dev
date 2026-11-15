@@ -3,6 +3,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { company } from "../../schema/db";
 import type { Company, CompanyCreate, CompanyUpdate } from "../api/schemas";
 import { ServiceError } from "./errors";
+import { slugify } from "@hirejuniors/jobs/slug";
 
 type Db = DrizzleD1Database;
 
@@ -16,16 +17,6 @@ function toApi(row: typeof company.$inferSelect): Company {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-/** "Hire Juniors, Inc." → "hire-juniors-inc" */
-function slugify(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return slug || "company";
 }
 
 export function list(db: Db): Promise<Company[]> {

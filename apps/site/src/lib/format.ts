@@ -18,6 +18,3 @@ export function isoDate(d: Date): string {
 }
 
 /** True when two dates fall on the same calendar day. */
-export function sameDay(a: Date, b: Date): boolean {
-  return isoDate(a) === isoDate(b);
-}

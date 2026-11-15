@@ -67,6 +67,19 @@ describe("discovery api", () => {
     expect(list.data[0].origin).toBe("manual");
     expect(list.data[0].status).toBe("queued");
   });
+
+  it("POST accepts board URLs — ashby URL → ashby:Notion, domain → bare host", async () => {
+    const r = await req(admin, "POST", "/api/discovery", {
+      domains: ["https://jobs.ashbyhq.com/Notion/abc", "stripe.com"],
+    });
+    expect(r.status).toBe(200);
+    const list = (await (await req(admin, "GET", "/api/discovery")).json()) as {
+      data: { input: string }[];
+    };
+    const inputs = list.data.map((c) => c.input);
+    expect(inputs).toContain("ashby:Notion");
+    expect(inputs).toContain("stripe.com");
+  });
 });
 
 describe("jobs approve/reject", () => {
