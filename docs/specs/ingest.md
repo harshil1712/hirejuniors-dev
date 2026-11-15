@@ -429,7 +429,13 @@ the next feed, and retired again every run.) On upsert, an `expired` job is
 reactivated only if its `valid_through` is null or in the future.
 
 **Link + page check** — up to 400 `active` jobs selected once (nulls first by
-`last_checked_at`), slices of 40 per step:
+`last_checked_at`), slices of 40 per step. Steps 1–2 (`link_dead`) apply to
+every job. **Step 3 (the Browser Run page read + `closed_page`) applies only
+to jobs from `careers_page` sources**; for JSON-feed sources the feed is
+authoritative — a job the feed lists is open — so their 2xx responses are
+just stamped. (Real run: Stripe's Greenhouse `absolute_url` points at a
+search page, so two open Stripe internships were retired `closed_page`,
+reactivated by the next feed, and retired again.)
 
 1. GET `apply_url` with `redirect: "manual"`, follow at most 3 redirects
    manually (resolving relative `Location`), 10 s timeout per hop.
