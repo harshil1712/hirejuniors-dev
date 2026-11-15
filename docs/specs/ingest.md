@@ -101,6 +101,20 @@ used by discovery: one GET of the same endpoint `fetchListings` uses (without
 Greenhouse `companyName` comes from `GET /v1/boards/{board}` → `name`; others
 leave it undefined (company name falls back to title-cased board).
 
+**Tolerant parsing** (real run: Greenhouse returns `"metadata": null` on some
+boards — Figma, Stripe, Monzo, Wise — and Ashby returns `isRemote: null` /
+`workplaceType: null` — Notion; each failed the whole board):
+
+- Every optional field in every platform job schema is `.nullish()` and
+  null is treated as absent.
+- The response envelope (e.g. `{ jobs: [...] }`) must parse; then each job is
+  `safeParse`d individually. Invalid jobs are skipped. If more than **20 %**
+  of a non-empty feed's jobs are invalid, the fetch fails (no feed diff) with
+  the first zod issue path in the error.
+- `probe`: HTTP 200 + envelope parses → `ok: true` (individual jobs are not
+  validated). A zod/JSON failure is a real answer → `{ ok: false }`; only a
+  thrown fetch (network/timeout) is `{ ok: false, networkError: true }`.
+
 ## Discovery (`discover.ts`)
 
 Two inputs, one pipeline. Both end in `probe` → create company + source.
@@ -121,8 +135,12 @@ rows with `origin = 'manual'`. For each queued manual candidate:
    - Lever: `jobs\.lever\.co/([A-Za-z0-9_.-]+)`
    - Ashby: `jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)`
      Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
-3. If no link is found, guess `board = first label of d` (e.g. `stripe` from
-   `stripe.com`) and probe Greenhouse, Lever, Ashby in that order.
+3. If no link is found, guess boards from the first label of `d`: the label
+   itself (e.g. `stripe` from `stripe.com`), then — if the label ends with
+   `hq`, `app`, `inc`, `labs`, `io` or `jobs` and is longer than that suffix
+   - 2 chars — the label without the suffix (e.g. `datadog` from
+     `datadoghq.com`). For each guess, probe Greenhouse, Lever, Ashby in that
+     order.
 4. First successful `probe` → `found`. Network errors on every attempt →
    `failed` (retried next run while `attempts < 3`).
 5. **Careers-page fallback.** No ATS board found, but one of the step-1 pages
@@ -229,7 +247,7 @@ Company: {company.name}
 Location: {location_raw}
 Employment type: {employment_type ?? "unknown"}
 
-{htmlToText(description_html) truncated to 6000 characters}
+{htmlToText(description_html, 6000) — the full description text up to 6000 characters}
 ```
 
 Questions:
@@ -292,18 +310,25 @@ Questions:
 
 Let `pLevel = probabilities[level.choice]`, `pTech = is_tech.noul`.
 
-- **Accept** when `pLevel ≥ 0.80` and (`pTech ≥ 0.80` or `pTech ≤ 0.20`).
-- Otherwise **escalate**: repeat the identical call on `@cf/cloudflare/clef`
-  (`model: "clef"`). Accept when `pLevel ≥ 0.70` and (`pTech ≥ 0.70` or
-  `pTech ≤ 0.30`).
-- Still not accepted → status `review`, `level` = best guess unless it is
-  `not_early_career`, `review_reason` = `"level p=0.62, tech p=0.55"` style
-  string, `classified_by` = the last model used.
+Each model call is evaluated with its own thresholds — Flash: `T = 0.80`,
+`techHigh = 0.80`, `techLow = 0.20`; Clef: `T = 0.70`, `techHigh = 0.70`,
+`techLow = 0.30` — in this order (first rule that fires decides):
 
-On accept: `level.choice = not_early_career` → `rejected` /
-`not_early_career`; else `pTech < 0.5` → `rejected` / `not_tech`; else
-`active` with `level`. Store `classifier_confidence = min(pLevel,
-max(pTech, 1 − pTech))`, `classified_by`, `classified_at`. `workplace`: only
+1. `level.choice = not_early_career` and `pLevel ≥ T` → **rejected** /
+   `not_early_career` (tech is irrelevant).
+2. `pTech ≤ techLow` → **rejected** / `not_tech` (level is irrelevant).
+3. `level.choice ≠ not_early_career`, `pLevel ≥ T` and `pTech ≥ techHigh` →
+   **active** with `level`.
+4. Otherwise undecided: after Flash → **escalate** (repeat the identical
+   call on `@cf/cloudflare/clef`, `model: "clef"`); after Clef → status
+   `review`, `level` = best guess unless it is `not_early_career`,
+   `review_reason` = `"level p=0.62, tech p=0.55"` style string.
+
+(Real run 2026-11-15: requiring a confident tech answer even when the model
+was confident the role was senior, or vice versa, sent 111 of 500 jobs to
+review.) Store `classifier_confidence` = the probability of the rule that
+fired (`pLevel` for 1, `1 − pTech` for 2, `min(pLevel, pTech)` for 3; null
+for review), `classified_by` = the model whose answer decided, `classified_at`. `workplace`: only
 fill when the column is null, the answer isn't `unclear` and its probability
 ≥ 0.70. `salary_currency`/`salary_period`: keep in step-local memory for
 extraction; persist only via §Extraction rules. Rejected jobs get
@@ -375,14 +400,20 @@ returned 0 while the source has ≥ 1 `active` job → throw
 `"feed shrank from X to Y"` (treated as a failed fetch: no diff). On success
 set `last_fetched`.
 
-**Missing from feed: 1 miss.** Jobs of the source in `active` or `review`
-not seen in a successful fetch are retired `missing_from_feed` immediately
-(`missed_runs` is kept as a counter but the threshold is now 1). `pending`
-and `rejected` jobs not seen are set `retired` / `missing_from_feed` too, so
-they leave the queue.
+**Missing from feed.** Jobs of the source in `active` or `review` not seen
+in a successful fetch get `missed_runs + 1` and are retired
+`missing_from_feed` when `missed_runs` reaches the threshold: **1 for JSON
+platforms** (greenhouse, lever, ashby, amazon_jobs — their feeds are
+complete), **2 for `careers_page`** (rendered pages vary between loads —
+the real run saw a 6-link listing render with 5 links minutes later).
+`pending` and `rejected` jobs not seen are set `retired` /
+`missing_from_feed` at the same threshold, so they leave the queue.
 
-**Expire** — unchanged: `valid_through < now`, or
-`coalesce(posted_at, first_seen_at) < now − 90 days` → `expired`.
+**Expire** — `valid_through < now` → `expired`. **No age-based expiry.** (The
+90-day rule was removed after the real run: Palantir keeps evergreen Lever
+postings with old `createdAt`, so 68 open jobs were retired, reactivated by
+the next feed, and retired again every run.) On upsert, an `expired` job is
+reactivated only if its `valid_through` is null or in the future.
 
 **Link + page check** — up to 400 `active` jobs selected once (nulls first by
 `last_checked_at`), slices of 40 per step:
@@ -521,18 +552,24 @@ companies with no supported job board. `board` = the listing URL normalised
 **Ingest** for a `careers_page` source:
 
 - The job links from the listing parse are the feed: `externalId` =
-  normalised job URL, `title` = link text (trimmed, whitespace collapsed),
-  `applyUrl` = job URL. Feed diff and the shrink guard apply as for any
-  source.
+  normalised job URL, `title` = link text cleaned: if it contains an HTML
+  heading (`<h1>`–`<h6>`) use that heading's text, else the text before the
+  first HTML tag or line break; then strip any remaining tags, decode
+  entities, collapse whitespace, trim (real run: Revolut/Shopify link text
+  was `"<h2>Support Specialist</h2>Remote: Philippines"`). `applyUrl` = job
+  URL. Feed diff and the shrink guard apply as for any source.
 - For job links not yet stored (new), fetch details: `browser.markdown(url)`
   → `descriptionHtml` = `markdownToHtml(md)` (a small pure function in
   `html.ts`: HTML-escape everything, blank-line-separated blocks → `<p>`,
   consecutive lines starting `- `/`* ` → `<ul><li>`, lines starting `#`… →
-  `<h3>`; no raw HTML passes through). Then one `clairic` call on the
-  Markdown with fields `{"location": {"type": "text", "instructions": "Where
-  the job is based, as written on the page"}, "posted_date": {"type":
-  "date", "instructions": "Date the job was posted"}}` → `locationRaw`
-  (value with confidence ≥ 0.80, else `""`), `postedAt` (same gate).
+  `<h3>`; no raw HTML passes through). Before conversion, strip a leading
+  YAML front-matter block (`---` … `---`) that Browser Run's Markdown may
+  start with. Then one `clairic` call on the Markdown with fields
+  `{"location": {"type": "text", "instructions": "Where the job is based, as
+  written on the page"}}` → `locationRaw` (value with confidence ≥ 0.80,
+  else `""`). `postedAt` stays null (first_seen_at is used). (A
+  `posted_date` field was removed after the real run: with no date on the
+  page Clairic returned the reference date — today — at ≥ 0.80 confidence.)
 - At most **30 new job pages per careers-page source per run**; links beyond
   that are left out of this run's upsert and **excluded from the feed diff**
   (they are not "missing", just not fetched yet). Existing jobs whose link is
