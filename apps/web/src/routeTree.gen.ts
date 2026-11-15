@@ -11,16 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
-import { Route as CheckEmailRouteImport } from './routes/check-email'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as SignInRouteImport } from './routes/sign-in'
-import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 import { Route as AuthedDiscoveryRouteImport } from './routes/_authed/discovery'
 import { Route as AuthedJobsRouteImport } from './routes/_authed/jobs'
 import { Route as AuthedRunsRouteImport } from './routes/_authed/runs'
-import { Route as AuthedSettingsRouteImport } from './routes/_authed/settings'
 import { Route as AuthedSourcesRouteImport } from './routes/_authed/sources'
 import { Route as AuthedJobsIdRouteImport } from './routes/_authed/jobs_.$id'
 import { Route as AuthedRunsIdRouteImport } from './routes/_authed/runs_.$id'
@@ -32,31 +26,6 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CheckEmailRoute = CheckEmailRouteImport.update({
-  id: '/check-email',
-  path: '/check-email',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignInRoute = SignInRouteImport.update({
-  id: '/sign-in',
-  path: '/sign-in',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignUpRoute = SignUpRouteImport.update({
-  id: '/sign-up',
-  path: '/sign-up',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedDashboardRoute = AuthedDashboardRouteImport.update({
@@ -79,11 +48,6 @@ const AuthedRunsRoute = AuthedRunsRouteImport.update({
   path: '/runs',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthedRoute,
-} as any)
 const AuthedSourcesRoute = AuthedSourcesRouteImport.update({
   id: '/sources',
   path: '/sources',
@@ -102,32 +66,20 @@ const AuthedRunsIdRoute = AuthedRunsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/check-email': typeof CheckEmailRoute
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/discovery': typeof AuthedDiscoveryRoute
   '/jobs': typeof AuthedJobsRoute
   '/runs': typeof AuthedRunsRoute
-  '/settings': typeof AuthedSettingsRoute
   '/sources': typeof AuthedSourcesRoute
   '/jobs/$id': typeof AuthedJobsIdRoute
   '/runs/$id': typeof AuthedRunsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/check-email': typeof CheckEmailRoute
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/discovery': typeof AuthedDiscoveryRoute
   '/jobs': typeof AuthedJobsRoute
   '/runs': typeof AuthedRunsRoute
-  '/settings': typeof AuthedSettingsRoute
   '/sources': typeof AuthedSourcesRoute
   '/jobs/$id': typeof AuthedJobsIdRoute
   '/runs/$id': typeof AuthedRunsIdRoute
@@ -136,16 +88,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
-  '/check-email': typeof CheckEmailRoute
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
   '/_authed/discovery': typeof AuthedDiscoveryRoute
   '/_authed/jobs': typeof AuthedJobsRoute
   '/_authed/runs': typeof AuthedRunsRoute
-  '/_authed/settings': typeof AuthedSettingsRoute
   '/_authed/sources': typeof AuthedSourcesRoute
   '/_authed/jobs_/$id': typeof AuthedJobsIdRoute
   '/_authed/runs_/$id': typeof AuthedRunsIdRoute
@@ -154,32 +100,20 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/check-email'
-    | '/forgot-password'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
     | '/dashboard'
     | '/discovery'
     | '/jobs'
     | '/runs'
-    | '/settings'
     | '/sources'
     | '/jobs/$id'
     | '/runs/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/check-email'
-    | '/forgot-password'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
     | '/dashboard'
     | '/discovery'
     | '/jobs'
     | '/runs'
-    | '/settings'
     | '/sources'
     | '/jobs/$id'
     | '/runs/$id'
@@ -187,16 +121,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authed'
-    | '/check-email'
-    | '/forgot-password'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
     | '/_authed/dashboard'
     | '/_authed/discovery'
     | '/_authed/jobs'
     | '/_authed/runs'
-    | '/_authed/settings'
     | '/_authed/sources'
     | '/_authed/jobs_/$id'
     | '/_authed/runs_/$id'
@@ -205,11 +133,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthedRoute: typeof AuthedRouteWithChildren
-  CheckEmailRoute: typeof CheckEmailRoute
-  ForgotPasswordRoute: typeof ForgotPasswordRoute
-  ResetPasswordRoute: typeof ResetPasswordRoute
-  SignInRoute: typeof SignInRoute
-  SignUpRoute: typeof SignUpRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -226,41 +149,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/check-email': {
-      id: '/check-email'
-      path: '/check-email'
-      fullPath: '/check-email'
-      preLoaderRoute: typeof CheckEmailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in': {
-      id: '/sign-in'
-      path: '/sign-in'
-      fullPath: '/sign-in'
-      preLoaderRoute: typeof SignInRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-up': {
-      id: '/sign-up'
-      path: '/sign-up'
-      fullPath: '/sign-up'
-      preLoaderRoute: typeof SignUpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/dashboard': {
@@ -289,13 +177,6 @@ declare module '@tanstack/react-router' {
       path: '/runs'
       fullPath: '/runs'
       preLoaderRoute: typeof AuthedRunsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings': {
-      id: '/_authed/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthedSettingsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/sources': {
@@ -327,7 +208,6 @@ interface AuthedRouteChildren {
   AuthedDiscoveryRoute: typeof AuthedDiscoveryRoute
   AuthedJobsRoute: typeof AuthedJobsRoute
   AuthedRunsRoute: typeof AuthedRunsRoute
-  AuthedSettingsRoute: typeof AuthedSettingsRoute
   AuthedSourcesRoute: typeof AuthedSourcesRoute
   AuthedJobsIdRoute: typeof AuthedJobsIdRoute
   AuthedRunsIdRoute: typeof AuthedRunsIdRoute
@@ -338,7 +218,6 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedDiscoveryRoute: AuthedDiscoveryRoute,
   AuthedJobsRoute: AuthedJobsRoute,
   AuthedRunsRoute: AuthedRunsRoute,
-  AuthedSettingsRoute: AuthedSettingsRoute,
   AuthedSourcesRoute: AuthedSourcesRoute,
   AuthedJobsIdRoute: AuthedJobsIdRoute,
   AuthedRunsIdRoute: AuthedRunsIdRoute,
@@ -350,11 +229,6 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthedRoute: AuthedRouteWithChildren,
-  CheckEmailRoute: CheckEmailRoute,
-  ForgotPasswordRoute: ForgotPasswordRoute,
-  ResetPasswordRoute: ResetPasswordRoute,
-  SignInRoute: SignInRoute,
-  SignUpRoute: SignUpRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -23,23 +23,6 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
-    // Better Auth signals redirects/403s by throwing APIError inside its
-    // endpoint machinery on a separate task — the worker answers correctly,
-    // but vitest counts the cross-task rejection as unhandled and fails the
-    // suite nondeterministically. Filter only those APIErrors (name +
-    // control-flow status codes); every other unhandled error still fails.
-    onUnhandledError: (error) => {
-      const e = error as { name?: string; statusCode?: number };
-      if (
-        e.name === "APIError" &&
-        (e.statusCode === 302 ||
-          e.statusCode === 403 ||
-          e.statusCode === 400 ||
-          e.statusCode === 404)
-      ) {
-        return false;
-      }
-    },
   },
   plugins: [
     lazyPlugins(() => [
@@ -55,11 +38,9 @@ export default defineConfig({
         wrangler: { configPath: "./vitest.wrangler.jsonc" },
         miniflare: {
           bindings: { TEST_MIGRATIONS: testMigrations },
-          serviceBindings: { EMAIL_SINK: "email-sink" },
           // Every outbound global fetch in the worker under test lands here —
-          // keeps the suite fully offline. Routes by host: Turnstile's
-          // siteverify (the always-pass test key still does the HTTP call)
-          // and the Greenhouse board API used by POST /sources/preview.
+          // keeps the suite fully offline. Routes the Greenhouse board API
+          // used by POST /sources/preview.
           outboundService: "fixture-feed",
           workers: [
             {
@@ -75,30 +56,10 @@ export default defineConfig({
               ];
               export default { async fetch(req) {
                 const host = new URL(req.url).hostname;
-                if (host === "challenges.cloudflare.com") {
-                  return Response.json({ success: true, "error-codes": [], hostname: "x" });
-                }
                 if (host === "boards-api.greenhouse.io") {
                   return Response.json({ jobs: GH_JOBS });
                 }
                 return new Response("fixture-feed: unknown host " + host, { status: 404 });
-              }}`,
-            },
-            {
-              name: "email-sink",
-              modules: true,
-              compatibilityDate: "2025-06-01",
-              // Records outbound mail into the shared test D1 so tests can
-              // assert a verification/reset email was actually sent.
-              d1Databases: { DB: "test-db" },
-              script: `export default { async fetch(req, env) {
-                const m = await req.json();
-                await env.DB.prepare(
-                  "CREATE TABLE IF NOT EXISTS sent_email (to_addr text, subject text, text text, html text)"
-                ).run();
-                await env.DB.prepare("INSERT INTO sent_email VALUES (?,?,?,?)")
-                  .bind(m.to, m.subject, m.text, m.html).run();
-                return new Response("ok");
               }}`,
             },
           ],

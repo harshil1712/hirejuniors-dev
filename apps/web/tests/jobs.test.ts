@@ -1,10 +1,11 @@
 /// <reference types="@cloudflare/vitest-plugin/types" />
-import { env, SELF } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vite-plus/test";
 import {
   migrate,
-  verifiedSessionCookie,
-  adminSessionCookie,
+  accessFetch,
+  anonFetch,
+  OWNER,
   seedCompany,
   seedSource,
   seedJob,
@@ -58,45 +59,31 @@ interface RequestBody {
   enabled?: boolean;
 }
 
-function req(
-  cookieOrKey: string,
-  method: string,
-  path: string,
-  body?: RequestBody,
-  kind: "cookie" | "bearer" = "cookie",
-) {
-  const headers = new Headers(
-    kind === "cookie" ? { cookie: cookieOrKey } : { authorization: `Bearer ${cookieOrKey}` },
-  );
-  if (body !== undefined) headers.set("content-type", "application/json");
-  return SELF.fetch(`https://x${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+function req(email: string | null, method: string, path: string, body?: RequestBody) {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "content-type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  return accessFetch(path, init, email);
 }
 
-let admin: string;
-beforeAll(async () => {
-  await migrate();
-  admin = await adminSessionCookie(`admin-${crypto.randomUUID()}@t.dev`);
-});
+beforeAll(migrate);
 
 function session(method: string, path: string, body?: RequestBody) {
-  return req(admin, method, path, body);
+  return req(OWNER, method, path, body);
 }
 
 describe("jobs api", () => {
-  it("401 unauth; 403 non-admin session; admin session OK", async () => {
-    const anon = await SELF.fetch("https://x/api/jobs");
+  it("401 without Access; 403 non-owner identity; owner OK", async () => {
+    const anon = await anonFetch("/api/jobs");
     expect(anon.status).toBe(401);
 
-    const plain = await verifiedSessionCookie(`plain-${crypto.randomUUID()}@t.dev`);
-    const forbidden = await req(plain, "GET", "/api/jobs");
+    const forbidden = await req(`plain-${crypto.randomUUID()}@t.dev`, "GET", "/api/jobs");
     expect(forbidden.status).toBe(403);
-    expect((await forbidden.json<Envelope>()).error.code).toBe("forbidden");
+    expect(((await forbidden.json()) as Envelope).error.code).toBe("forbidden");
 
-    const ok = await req(admin, "GET", "/api/jobs");
+    const ok = await req(OWNER, "GET", "/api/jobs");
     expect(ok.status).toBe(200);
   });
 
@@ -126,49 +113,48 @@ describe("jobs api", () => {
       firstSeenAt: new Date(base + 2000),
     });
 
-    const active = await (
-      await session("GET", `/api/jobs?sourceId=${sid}`)
-    ).json<{
+    const active = (await (await session("GET", `/api/jobs?sourceId=${sid}`)).json()) as {
       data: JobDto[];
-    }>();
+    };
     expect(active.data).toHaveLength(2);
 
-    const retired = await (
+    const retired = (await (
       await session("GET", `/api/jobs?status=retired&sourceId=${sid}`)
-    ).json<{ data: JobDto[] }>();
+    ).json()) as { data: JobDto[] };
     expect(retired.data).toHaveLength(1);
     expect(retired.data[0].retireReason).toBe("missing_from_feed");
 
-    const byLevel = await (
+    const byLevel = (await (
       await session("GET", `/api/jobs?level=graduate&sourceId=${sid}`)
-    ).json<{ data: JobDto[] }>();
+    ).json()) as { data: JobDto[] };
     expect(byLevel.data.map((j: JobDto) => j.title)).toEqual(["Graduate Data Analyst"]);
 
-    const byCountry = await (
+    const byCountry = (await (
       await session("GET", `/api/jobs?country=us&sourceId=${sid}`)
-    ).json<{ data: JobDto[] }>();
+    ).json()) as { data: JobDto[] };
     expect(byCountry.data.map((j: JobDto) => j.title)).toEqual(["Frontend Intern"]);
 
-    const byQ = await (
-      await session("GET", `/api/jobs?q=graduate&sourceId=${sid}`)
-    ).json<{ data: JobDto[] }>();
+    const byQ = (await (await session("GET", `/api/jobs?q=graduate&sourceId=${sid}`)).json()) as {
+      data: JobDto[];
+    };
     expect(byQ.data).toHaveLength(1);
 
-    const byCompany = await (
-      await session("GET", `/api/jobs?companyId=${cid}`)
-    ).json<{ data: JobDto[] }>();
+    const byCompany = (await (await session("GET", `/api/jobs?companyId=${cid}`)).json()) as {
+      data: JobDto[];
+    };
     expect(byCompany.data).toHaveLength(2);
     expect(byCompany.data[0].company.slug).toBeTruthy();
 
     // Pagination: 2 pages, disjoint, in first_seen_at DESC order.
-    const p1 = await (
-      await session("GET", `/api/jobs?sourceId=${sid}&limit=1`)
-    ).json<{ data: JobDto[]; nextCursor: string | null }>();
+    const p1 = (await (await session("GET", `/api/jobs?sourceId=${sid}&limit=1`)).json()) as {
+      data: JobDto[];
+      nextCursor: string | null;
+    };
     expect(p1.data).toHaveLength(1);
     expect(p1.nextCursor).toBeTruthy();
-    const p2 = await (
+    const p2 = (await (
       await session("GET", `/api/jobs?sourceId=${sid}&limit=1&cursor=${p1.nextCursor}`)
-    ).json<{ data: JobDto[]; nextCursor: string | null }>();
+    ).json()) as { data: JobDto[]; nextCursor: string | null };
     expect(p2.data).toHaveLength(1);
     const ids = [...p1.data, ...p2.data].map((j) => j.id);
     expect(new Set(ids).size).toBe(2);
@@ -179,16 +165,16 @@ describe("jobs api", () => {
     const sid = await seedSource(cid);
     const jid = await seedJob(sid, cid);
 
-    const retired = await (
+    const retired = (await (
       await session("PATCH", `/api/jobs/${jid}`, { status: "retired" })
-    ).json<{ data: JobDto }>();
+    ).json()) as { data: JobDto };
     expect(retired.data.status).toBe("retired");
     expect(retired.data.retireReason).toBe("manual");
     expect(retired.data.retiredAt).toBeTruthy();
 
-    const restored = await (
+    const restored = (await (
       await session("PATCH", `/api/jobs/${jid}`, { status: "active" })
-    ).json<{ data: JobDto }>();
+    ).json()) as { data: JobDto };
     expect(restored.data.status).toBe("active");
     expect(restored.data.retireReason).toBeNull();
     expect(restored.data.retiredAt).toBeNull();
@@ -204,7 +190,7 @@ describe("companies api", () => {
   it("create derives slug; duplicate slug → 409", async () => {
     const r = await session("POST", "/api/companies", { name: "Dupe Co, Inc." });
     expect(r.status).toBe(201);
-    const created = (await r.json<{ data: CompanyDto }>()).data;
+    const created = ((await r.json()) as { data: CompanyDto }).data;
     expect(created.slug).toBe("dupe-co-inc");
 
     const dupe = await session("POST", "/api/companies", {
@@ -212,18 +198,18 @@ describe("companies api", () => {
       slug: "dupe-co-inc",
     });
     expect(dupe.status).toBe(409);
-    expect((await dupe.json<Envelope>()).error.code).toBe("conflict");
+    expect(((await dupe.json()) as Envelope).error.code).toBe("conflict");
   });
 
   it("list + patch", async () => {
-    const list = await (await session("GET", "/api/companies")).json<{ data: CompanyDto[] }>();
+    const list = (await (await session("GET", "/api/companies")).json()) as { data: CompanyDto[] };
     expect(list.data.length).toBeGreaterThan(0);
 
     const r = await session("POST", "/api/companies", { name: "Patch Me" });
-    const id = (await r.json<{ data: CompanyDto }>()).data.id;
-    const patched = await (
+    const id = ((await r.json()) as { data: CompanyDto }).data.id;
+    const patched = (await (
       await session("PATCH", `/api/companies/${id}`, { homepageUrl: "https://x.dev" })
-    ).json<{ data: CompanyDto & { homepageUrl: string | null } }>();
+    ).json()) as { data: CompanyDto & { homepageUrl: string | null } };
     expect(patched.data.homepageUrl).toBe("https://x.dev");
   });
 });
@@ -240,7 +226,7 @@ describe("sources api", () => {
       enabled: true,
     });
     expect(bad.status).toBe(400);
-    expect((await bad.json<Envelope>()).error.code).toBe("validation_failed");
+    expect(((await bad.json()) as Envelope).error.code).toBe("validation_failed");
 
     const ok = await session("POST", "/api/sources", {
       companyId: cid,
@@ -265,7 +251,7 @@ describe("sources api", () => {
 
   it("PATCH enable/disable; list includes the active job count", async () => {
     const { id: cid } = await seedCompany({ name: "Count Co" });
-    const created = await (
+    const created = (await (
       await session("POST", "/api/sources", {
         companyId: cid,
         platform: "lever",
@@ -274,20 +260,20 @@ describe("sources api", () => {
         includeAll: true,
         enabled: true,
       })
-    ).json<{ data: SourceDto }>();
+    ).json()) as { data: SourceDto };
     const sid = created.data.id;
     await seedJob(sid, cid);
     await seedJob(sid, cid, { status: "retired", retiredAt: new Date(), retireReason: "expired" });
 
-    const list = await (await session("GET", "/api/sources")).json<{ data: SourceDto[] }>();
+    const list = (await (await session("GET", "/api/sources")).json()) as { data: SourceDto[] };
     const row = list.data.find((s: SourceDto) => s.id === sid)!;
     expect(row.activeJobs).toBe(1);
     expect(row.company.id).toBe(cid);
 
     const off = await session("PATCH", `/api/sources/${sid}`, { enabled: false });
-    expect((await off.json<{ data: SourceDto }>()).data.enabled).toBe(false);
+    expect(((await off.json()) as { data: SourceDto }).data.enabled).toBe(false);
     const on = await session("PATCH", `/api/sources/${sid}`, { enabled: true });
-    expect((await on.json<{ data: SourceDto }>()).data.enabled).toBe(true);
+    expect(((await on.json()) as { data: SourceDto }).data.enabled).toBe(true);
   });
 
   it("preview validates config → 400 on bad input", async () => {
@@ -298,7 +284,7 @@ describe("sources api", () => {
       includeAll: false,
     });
     expect(bad.status).toBe(400);
-    expect((await bad.json<Envelope>()).error.code).toBe("validation_failed");
+    expect(((await bad.json()) as Envelope).error.code).toBe("validation_failed");
   });
 
   it("preview fetches the upstream feed and returns fetched/kept/sample", async () => {
@@ -311,7 +297,7 @@ describe("sources api", () => {
       includeAll: false,
     });
     expect(r.status).toBe(200);
-    const body = await r.json<{
+    const body = (await r.json()) as {
       data: {
         fetched: number;
         kept: number;
@@ -322,7 +308,7 @@ describe("sources api", () => {
           countryCode: string | null;
         }[];
       };
-    }>();
+    };
     expect(body.data.fetched).toBe(5);
     // Senior + Manager titles are dropped; intern/graduate/junior are kept.
     expect(body.data.kept).toBe(3);
@@ -344,13 +330,13 @@ describe("runs api", () => {
     const run2 = await seedRun({ startedAt: new Date(t + 1000), trigger: "manual" });
     await seedSourceRun(run2, sid, { status: "failed", error: "fetch failed" });
 
-    const list = await (await session("GET", "/api/runs")).json<{ data: RunDto[] }>();
+    const list = (await (await session("GET", "/api/runs")).json()) as { data: RunDto[] };
     const idx2 = list.data.findIndex((r: RunDto) => r.id === run2);
     const idx1 = list.data.findIndex((r: RunDto) => r.id === run1);
     expect(idx2).toBeGreaterThanOrEqual(0);
     expect(idx2).toBeLessThan(idx1);
 
-    const detail = await (await session("GET", `/api/runs/${run2}`)).json<{ data: RunDto }>();
+    const detail = (await (await session("GET", `/api/runs/${run2}`)).json()) as { data: RunDto };
     expect(detail.data.sourceRuns).toHaveLength(1);
     expect(detail.data.sourceRuns![0].error).toBe("fetch failed");
 
@@ -362,6 +348,6 @@ describe("runs api", () => {
     expect(env.INGEST_WORKFLOW).toBeUndefined();
     const r = await session("POST", "/api/runs");
     expect(r.status).toBe(503);
-    expect((await r.json<Envelope>()).error.code).toBe("unavailable");
+    expect(((await r.json()) as Envelope).error.code).toBe("unavailable");
   });
 });

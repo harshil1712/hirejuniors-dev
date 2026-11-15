@@ -1,7 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as Config from "effect/Config";
 import { fileURLToPath } from "node:url";
 import { PROJECT, APP_DOMAIN } from "./project.config";
 
@@ -26,59 +25,50 @@ const DB = Cloudflare.D1.Database(
   }),
 );
 
-// Turnstile widget — prod only; every other stage uses Cloudflare's
-// always-pass test pair so previews/e2e/local dev stay automatable.
-const TurnstileWidget = isProd
-  ? Cloudflare.Turnstile.Widget(
-      `${PROJECT.name}-turnstile`,
-      Effect.gen(function* () {
-        const stage = yield* Alchemy.Stage;
-        return {
-          name: `${PROJECT.name}-turnstile-${sanitizeStage(stage)}`,
-          domains: [APP_DOMAIN],
-          mode: "managed" as const,
-        };
-      }),
-    )
-  : null;
-
-// Email sending domain on the zone — prod only. Local dev uses alchemy's
-// .eml simulator (.alchemy/local/email), previews send nothing real.
-// Zone id comes from CLOUDFLARE_ZONE_ID (or a zone lookup) — never hardcode it.
-const _EmailDomain =
-  isProd && process.env.CLOUDFLARE_ZONE_ID
-    ? Cloudflare.Email.SendingSubdomain(`${PROJECT.name}-email`, {
-        zoneId: process.env.CLOUDFLARE_ZONE_ID,
-        name: PROJECT.domain,
-      })
-    : null;
-
 // Per-PR Worker Previews: with PR_NAME set each Worker is uploaded as a
 // preview version *of* its production self (parent deployment untouched).
 const PREVIEW_NAME = process.env.PR_NAME ?? "";
+
+// The dashboard's only user. Cloudflare Access gates app.<domain> (and its
+// preview/workers.dev URLs) to this email; the worker re-checks the admitted
+// identity against it. Required for deployable stages so nobody deploys an
+// Access app with a placeholder owner; local dev falls back to a stub.
+const OWNER =
+  process.env.OWNER_ADMIN_EMAIL ??
+  (isProd || PREVIEW_NAME
+    ? (() => {
+        throw new Error(
+          "OWNER_ADMIN_EMAIL is required for prod and PR-preview deploys — it is the email Cloudflare Access admits to the dashboard.",
+        );
+      })()
+    : "dev@localhost");
 
 // ---------------------------------------------------------------------------
 // Workers
 // ---------------------------------------------------------------------------
 
-// Props given as an Effect so the Turnstile widget resolves first — its
-// secret/sitekey are only known after the resource applies.
 export const Web = Cloudflare.Website.Vite(
   `${PROJECT.name}-web`,
   Effect.gen(function* () {
-    const widget = isProd ? yield* TurnstileWidget! : null;
     const stage = sanitizeStage(yield* Alchemy.Stage);
     const props = {
       // a Preview inherits script-level settings (name, domain) from its parent
       name: PREVIEW_NAME ? undefined : `${PROJECT.name}-web`,
       rootDir: "./apps/web",
       main: "./worker/index.ts",
+      // Owner-only dashboard: a dedicated Access application covers the
+      // custom domain, workers.dev and version preview URLs. The worker
+      // re-checks ctx.access's identity against OWNER_ADMIN_EMAIL.
+      access: {
+        policies: [{ decision: "allow", include: [{ email: OWNER }] }],
+        sessionDuration: "720h",
+      },
       // Pin the runtime date explicitly. `nodejs_compat` is on by default
       // for dates ≥ 2026-08-04, and passing the flag with an undated (=newer)
       // default makes workerd throw "nodejs_compat became the default", so
-      // don't list it. If you lower the date below 2026-08-04, add
-      // `flags: ["nodejs_compat"]` back (better-auth + node:crypto need it).
-      dev: { port: 1338, strictPort: true },
+      // don't list it. If you lower the date below 2026-08-04 and something
+      // needs node:crypto, add `flags: ["nodejs_compat"]` back.
+      dev: { port: 1338, strictPort: true, access: { identity: { email: OWNER } } },
       compatibility: { date: "2026-10-01" },
       // Workers Observability: logs + traces (span-level view of subrequests).
       observability: {
@@ -95,20 +85,8 @@ export const Web = Cloudflare.Website.Vite(
         runWorkerFirst: ["/api/*"],
       },
       env: {
-        PUBLIC_APP_URL: "https://" + APP_DOMAIN,
         DB,
-        EMAIL: Cloudflare.Email.SendEmail("email"),
-        RATE_LIMITER: Cloudflare.RateLimit("RATE_LIMITER", {
-          namespaceId: 1001,
-          simple: { limit: 60, period: 60 },
-        }),
-        TURNSTILE_SECRET_KEY: widget ? widget.secret : "1x0000000000000000000000000000000AA",
-        TURNSTILE_SITE_KEY: widget ? widget.sitekey : "1x00000000000000000000AA",
-        BETTER_AUTH_SECRET: Config.Redacted("BETTER_AUTH_SECRET"),
-        BETTER_AUTH_URL: Config.Redacted("BETTER_AUTH_URL").pipe(
-          Config.withDefault(isProd ? `https://${APP_DOMAIN}` : "http://localhost:1338"),
-        ),
-        OWNER_ADMIN_EMAIL: Config.String("OWNER_ADMIN_EMAIL").pipe(Config.withDefault("")),
+        OWNER_ADMIN_EMAIL: OWNER,
       },
     };
     if (PREVIEW_NAME) return props;
@@ -143,7 +121,6 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
   preview: PREVIEW_NAME ? { of: `${PROJECT.name}-site`, name: PREVIEW_NAME } : undefined,
   dev: { port: 1337, strictPort: true },
   env: {
-    PUBLIC_APP_URL: isProd ? `https://${APP_DOMAIN}` : "http://localhost:1338",
     // Server-rendered job board reads the shared D1 (active listings only).
     DB,
   },
@@ -161,6 +138,8 @@ export const Jobs = PREVIEW_NAME
         return {
           name: `${PROJECT.name}-jobs`,
           main: "./apps/jobs/src/index.ts",
+          // Explicit port so the jobs worker never races the web worker's 1338.
+          dev: { port: 1339, strictPort: true },
           compatibility: { date: "2026-10-01" },
           observability: {
             enabled: true,

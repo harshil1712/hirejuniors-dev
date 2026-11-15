@@ -4,14 +4,14 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 
 ## Repo map
 
-- `apps/web` — app.<domain> (React/TanStack Router file routes/Kumo SPA + Hono worker in `worker/`, D1 via Drizzle, Better Auth with email verification + Turnstile + admin plugin).
+- `apps/web` — app.<domain> (React/TanStack Router file routes/Kumo SPA + Hono worker in `worker/`, D1 via Drizzle, owner-only via Cloudflare Access).
 - `apps/site` — <domain> apex (Astro, server-rendered job board over the shared D1; spec `docs/specs/site.md`). `packages/brand` — logo, tokens, fonts (shared by both apps).
 - `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
 - SEO gate for the site is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
 - Adding a resource to the app (schema → API → UI) — follow the `add-resource` skill; it walks the Sources resource end to end.
 - `scripts/init.ts` — renames the starter (package scope, worker names, domains, product name). `scripts/cf-token-preflight.sh` — deploy-token check.
-- `apps/web` — one service layer (`worker/services/*`) behind session `/api/{jobs,companies,sources,runs,dashboard,discovery}`. All resource routes require the admin role (`principal.isAdmin`). Shared zod schemas live in `worker/api/schemas.ts`; principal in `worker/middleware/principal.ts`.
+- `apps/web` — one service layer (`worker/services/*`) behind session `/api/{jobs,companies,sources,runs,dashboard,discovery}`. All routes sit behind `requireOwner` (`worker/middleware/owner.ts`), which checks the `ctx.access` identity against `OWNER_ADMIN_EMAIL`. Shared zod schemas live in `worker/api/schemas.ts`.
 - `tooling/anti-slop` — vendored Oxlint JS plugin, wired into `vp check`.
 - `alchemy.run.ts` — all infrastructure (Alchemy IaC). No resource is created any other way.
 - `project.config.ts` — single source for names/domains (name, productName, domain, appSubdomain, emailFrom).
@@ -25,7 +25,7 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 4. **Verification before done** (see the skills): `vp check` → `vp run -r test` → `vp run -r build`; UI changes need screenshots (`verify-ui`). Never claim a check passed without running it in this session.
 5. **No hook bypass.** Never `--no-verify`, never force-push `main`, never rewrite published history.
 6. **Database.** Drizzle ORM only, never raw SQL. Schema in `apps/web/schema/db.ts` (re-exports `@hirejuniors/db/schema`) + generated `src/auth-schema.ts` + `packages/db/src/schema.ts`; migrations in `packages/db/migrations` are hand-maintained SQL for now (`drizzle-kit generate` is broken with the pinned versions — see `packages/db/migrations/README.md`).
-7. **Local dev.** `vp run dev` (`alchemy dev`) needs `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` in env (env credentials take precedence over any alchemy profile); without `alchemy login`, use `CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1)` and the account id from `npx wrangler whoami`. Alchemy binds dev ports dynamically; point `BETTER_AUTH_URL` at the web URL it prints. Verification/reset mail lands in `.alchemy/local/email/`.
+7. **Local dev.** `vp run dev` (`alchemy dev`) needs `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` in env (env credentials take precedence over any alchemy profile); without `alchemy login`, use `CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1)` and the account id from `npx wrangler whoami`. Alchemy binds dev ports dynamically; the dev Access stub signs every request in as `dev@localhost` (or `OWNER_ADMIN_EMAIL` if set).
 8. **Clean up after yourself.** Before reporting done: stop dev servers/browsers you started, delete Worker Previews and temporary branches you created, remove scratch files/debug logging/unused code, leave `git status` clean. Follow `cleanup`.
 
 ## Design skills
@@ -53,8 +53,7 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 - **Kumo UI** (`@cloudflare/kumo`) + Phosphor icons + Tailwind 4. No other component library.
 - **Workers Observability** (logs + traces) — no Sentry, no external APM.
 - **No `vi.mock`** — the anti-slop plugin forbids module mocking; tests use real seams (service bindings, test env vars).
-- **Email verification required** before sign-in; Turnstile (prod widget, test keys elsewhere) guards sign-up/sign-in/password-reset.
-- **Admin via Better Auth's admin plugin** — no hand-rolled admin API; `OWNER_ADMIN_EMAIL` bootstraps the first admin.
+- **Dashboard login is Cloudflare Access** (owner email policy, set in `alchemy.run.ts`); the Worker checks the `ctx.access` identity against `OWNER_ADMIN_EMAIL`. No in-app auth — the SPA treats a `/api/me` 401/403 as "Not authorised".
 
 <!--VITE PLUS START-->
 

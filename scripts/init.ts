@@ -67,9 +67,9 @@ export const PROJECT = {
   domain: "${domain}",
   /** Subdomain the app runs on (site lives on the apex). */
   appSubdomain: "${OLD.appSubdomain}",
-  /** From: address for auth emails (verify, reset). */
+  /** From: address for product email. */
   emailFrom: "noreply@${domain}",
-  /** User-facing support address shown in auth emails and the footer. */
+  /** User-facing support address shown in the footer. */
   supportEmail: "support@${domain}",
 } as const;
 
@@ -105,12 +105,7 @@ const SKIP_DIRS = new Set([
   ".agents",
   ".claude",
 ]);
-const SKIP_FILES = new Set([
-  "scripts/init.ts",
-  "pnpm-lock.yaml",
-  "src/auth-schema.ts",
-  "src/routeTree.gen.ts",
-]);
+const SKIP_FILES = new Set(["scripts/init.ts", "pnpm-lock.yaml", "src/routeTree.gen.ts"]);
 
 const replacements: [RegExp, string][] = [
   [new RegExp(`@${OLD.name}/`, "g"), `@${name}/`],
@@ -118,7 +113,6 @@ const replacements: [RegExp, string][] = [
   [new RegExp(`${OLD.name}-web`, "g"), `${name}-web`],
   [new RegExp(`${OLD.name}-site`, "g"), `${name}-site`],
   [new RegExp(`${OLD.name}-db`, "g"), `${name}-db`],
-  [new RegExp(`${OLD.name}-turnstile`, "g"), `${name}-turnstile`],
   [new RegExp(`${OLD.name}-email`, "g"), `${name}-email`],
   [new RegExp(`${OLD.name}-local`, "g"), `${name}-local`],
   [new RegExp(`${OLD.name}-test`, "g"), `${name}-test`],

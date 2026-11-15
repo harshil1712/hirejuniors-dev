@@ -6,8 +6,6 @@
   "scripts": {
     "build": "vp build",
     "test": "vp test",
-    "auth:generate": "auth generate --config better-auth.config.ts --output src/auth-schema.ts --adapter drizzle --dialect sqlite -y",
-    "db:generate": "drizzle-kit generate",
     "prepare": "vp config",
     "check": "vp check",
     "format": "vp check --fix"
@@ -24,8 +22,6 @@
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-router": "1.170.46",
     "@vitejs/plugin-react": "6.1.2",
-    "better-auth": "1.7.16",
-    "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.13",
     "nanoid": "6.0.2",
@@ -39,11 +35,8 @@
     "@cloudflare/workers-types": "5.20261023.1",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/router-plugin": "1.168.48",
-    "@types/better-sqlite3": "9.6.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "auth": "1.7.16",
-    "drizzle-kit": "1.0.0-rc.4",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "catalog:",
@@ -52,7 +45,6 @@
     "wrangler": "4.152.0"
   },
   "allowScripts": {
-    "better-sqlite3@13.0.3": true,
     "esbuild": true,
     "msgpackr-extract@3.0.4": true,
     "workerd": true

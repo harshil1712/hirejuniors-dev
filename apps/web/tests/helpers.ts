@@ -1,9 +1,7 @@
-import { env, SELF, applyD1Migrations } from "cloudflare:test";
+import { env, applyD1Migrations } from "cloudflare:test";
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
-import { expect } from "vite-plus/test";
-import { account, company, ingestRun, job, source, sourceRun, user } from "../schema/db";
-import { createAuth } from "../worker/auth";
+import { company, ingestRun, job, source, sourceRun } from "../schema/db";
+import app from "../worker/index";
 
 // The hand-maintained migrations (drizzle-kit generate is/was broken — see
 // migrations/README.md) are applied exactly as alchemy applies them, proving
@@ -12,87 +10,29 @@ let migrated = false;
 export async function migrate() {
   if (migrated) return;
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS!);
-  await env.DB.exec(
-    "CREATE TABLE IF NOT EXISTS sent_email (to_addr text, subject text, text text, html text)",
-  );
   migrated = true;
 }
 
-export const PASSWORD = "test-password-123";
+/** OWNER_ADMIN_EMAIL in vitest.wrangler.jsonc. */
+export const OWNER = "owner@example.com";
 
-export async function signUp(email: string, captchaToken = "test-token") {
-  return SELF.fetch("https://x/api/auth/sign-up/email", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-captcha-response": captchaToken },
-    body: JSON.stringify({ name: "T", email, password: PASSWORD }),
-  });
+/**
+ * Call the real Hono app through its `fetch` with a fake ExecutionContext
+ * carrying a simulated `ctx.access` — the seam `requireOwner` reads
+ * (`null` identity = a request that bypassed Access entirely).
+ */
+export function accessFetch(path: string, init: RequestInit = {}, email: string | null = OWNER) {
+  const ctx = {
+    waitUntil() {},
+    passThroughOnException() {},
+    props: {},
+    access: email ? { aud: "test", getIdentity: async () => ({ email }) } : undefined,
+  };
+  return app.fetch(new Request(`https://x${path}`, init), env as never, ctx as never);
 }
 
-export async function verifyLatest(email: string) {
-  // Pull the verification URL out of the email the sink captured.
-  const row = await env.DB.prepare(
-    "SELECT text FROM sent_email WHERE to_addr = ? ORDER BY rowid DESC LIMIT 1",
-  )
-    .bind(email)
-    .first<{ text: string }>();
-  const url = row?.text.match(/https?:\/\/\S+/)?.[0];
-  expect(url).toBeTruthy();
-  // redirect:manual — the session cookie lives on the 302, not the target.
-  return SELF.fetch(url!, { redirect: "manual" });
-}
-
-/** Insert a verified credential user directly (sign-up is owner-only, so
- * test users bypass the endpoint) then sign in → session cookie. */
-export async function seedVerifiedUser(email: string) {
-  const auth = createAuth(env);
-  const ctx = await auth.$context;
-  const id = `u_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
-  const password = await ctx.password.hash(PASSWORD);
-  const now = new Date();
-  // Raw table inserts bypass the owner-only user.create hook.
-  await db().insert(user).values({
-    id,
-    name: "T",
-    email,
-    emailVerified: true,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await db()
-    .insert(account)
-    .values({
-      id: `acc_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
-      userId: id,
-      accountId: id,
-      providerId: "credential",
-      password,
-      createdAt: now,
-      updatedAt: now,
-    });
-}
-
-export async function signIn(email: string) {
-  const r = await SELF.fetch("https://x/api/auth/sign-in/email", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-captcha-response": "test" },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  });
-  expect(r.status).toBe(200);
-  return r.headers.get("set-cookie") ?? "";
-}
-
-export async function verifiedSessionCookie(email: string) {
-  await seedVerifiedUser(email);
-  return signIn(email);
-}
-
-/** A verified session whose user carries the Better Auth admin role —
- * required by every dashboard route (the dashboard is admin-only). */
-export async function adminSessionCookie(email: string) {
-  const cookie = await verifiedSessionCookie(email);
-  await drizzle(env.DB).update(user).set({ role: "admin" }).where(eq(user.email, email));
-  return cookie;
-}
+/** A request that bypassed Cloudflare Access — no ctx.access at all. */
+export const anonFetch = (path: string, init?: RequestInit) => accessFetch(path, init, null);
 
 // ---------------------------------------------------------------------------
 // Seed helpers for the ingest-dashboard tables (real D1, no fixtures).

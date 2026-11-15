@@ -2,9 +2,8 @@ import type { ReactNode } from "react";
 import { cn, Link, Sidebar, useSidebar } from "@cloudflare/kumo";
 import { Link as RouterLink, useLocation } from "@tanstack/react-router";
 import { Logo } from "@hirejuniors/brand/Logo.tsx";
-import { useSession } from "../lib/auth-client";
 import { PRODUCT } from "../config";
-import { navItemsFor } from "./nav";
+import { NAV_ITEMS } from "./nav";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
@@ -12,10 +11,9 @@ import { UserMenu } from "./user-menu";
 const FOCUS_RING = "focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:ring-inset";
 
 function SidebarNav() {
-  const { data } = useSession();
   const { pathname } = useLocation();
   const { isMobile, setOpenMobile, state } = useSidebar();
-  const items = navItemsFor(data?.user?.role);
+  const items = NAV_ITEMS;
 
   return (
     <>
@@ -74,13 +72,7 @@ function NavTrigger() {
 }
 
 /** Page column. Inert while the mobile sheet is open so Tab stays in the sheet. */
-function ShellContent({
-  user,
-  children,
-}: {
-  user?: { email: string; name?: string | null };
-  children: ReactNode;
-}) {
+function ShellContent({ email, children }: { email: string; children: ReactNode }) {
   const { isMobile, openMobile } = useSidebar();
   return (
     <div className="flex min-w-0 flex-1 flex-col" inert={isMobile && openMobile}>
@@ -89,7 +81,7 @@ function ShellContent({
           <NavTrigger />
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
-            {user && <UserMenu user={user} />}
+            <UserMenu email={email} />
           </div>
         </div>
       </header>
@@ -104,8 +96,7 @@ function ShellContent({
   );
 }
 
-export default function AppShell({ children }: { children: ReactNode }) {
-  const { data } = useSession();
+export default function AppShell({ email, children }: { email: string; children: ReactNode }) {
   return (
     <Sidebar.Provider defaultOpen className="min-h-svh bg-kumo-canvas text-kumo-default">
       <Link
@@ -120,7 +111,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <Sidebar className="h-svh md:sticky md:top-0">
         <SidebarNav />
       </Sidebar>
-      <ShellContent user={data?.user}>{children}</ShellContent>
+      <ShellContent email={email}>{children}</ShellContent>
     </Sidebar.Provider>
   );
 }

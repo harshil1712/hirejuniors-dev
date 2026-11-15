@@ -1,39 +1,26 @@
 /// <reference types="@cloudflare/vitest-plugin/types" />
-import { SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vite-plus/test";
-import {
-  migrate,
-  verifiedSessionCookie,
-  adminSessionCookie,
-  seedCompany,
-  seedSource,
-  seedJob,
-} from "./helpers";
+import { migrate, accessFetch, OWNER, seedCompany, seedSource, seedJob } from "./helpers";
 
 interface ReqBody {
   domains?: string[];
   level?: string;
 }
-function req(cookie: string, method: string, path: string, body?: ReqBody) {
-  const headers = new Headers({ cookie });
-  if (body !== undefined) headers.set("content-type", "application/json");
-  return SELF.fetch(`https://x${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+function req(email: string | null, method: string, path: string, body?: ReqBody) {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "content-type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  return accessFetch(path, init, email);
 }
 
-let admin: string;
-let member: string;
-beforeAll(async () => {
-  await migrate();
-  admin = await adminSessionCookie(`dscadmin-${crypto.randomUUID()}@t.dev`);
-  member = await verifiedSessionCookie(`dscmember-${crypto.randomUUID()}@t.dev`);
-});
+const admin = OWNER;
+const member = `dscmember-${crypto.randomUUID()}@t.dev`;
+beforeAll(migrate);
 
 describe("discovery api", () => {
-  it("admin-only: member session gets 403 on both routes", async () => {
+  it("owner-only: non-owner identity gets 403 on both routes", async () => {
     expect((await req(member, "GET", "/api/discovery")).status).toBe(403);
     expect((await req(member, "POST", "/api/discovery", { domains: ["a.com"] })).status).toBe(403);
   });

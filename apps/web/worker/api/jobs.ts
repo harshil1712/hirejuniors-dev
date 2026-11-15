@@ -4,10 +4,10 @@ import { zValidator } from "@hono/zod-validator";
 import { drizzle } from "drizzle-orm/d1";
 import { onApiError, validationHook } from "./errors";
 import * as svc from "../services/jobs";
-import { requireAdmin, type PrincipalVars } from "../middleware/principal";
+import type { OwnerVars } from "../middleware/owner";
 import { JobApprove, JobListQuery, JobUpdate } from "./schemas";
 
-type AppEnv = { Bindings: Env; Variables: PrincipalVars };
+type AppEnv = { Bindings: Env; Variables: OwnerVars };
 
 const idParam = z.object({ id: z.string() });
 
@@ -17,13 +17,13 @@ const idParam = z.object({ id: z.string() });
  */
 export const jobsApi = new Hono<AppEnv>()
   .onError(onApiError)
-  .get("/jobs", requireAdmin, zValidator("query", JobListQuery, validationHook), async (c) => {
+  .get("/jobs", zValidator("query", JobListQuery, validationHook), async (c) => {
     const query = c.req.valid("query");
     const db = drizzle(c.env.DB);
     const { items, nextCursor } = await svc.list(db, query);
     return c.json({ data: items, nextCursor }, 200);
   })
-  .get("/jobs/:id", requireAdmin, zValidator("param", idParam, validationHook), async (c) => {
+  .get("/jobs/:id", zValidator("param", idParam, validationHook), async (c) => {
     const { id } = c.req.valid("param");
     const db = drizzle(c.env.DB);
     const found = await svc.get(db, id);
@@ -31,7 +31,6 @@ export const jobsApi = new Hono<AppEnv>()
   })
   .patch(
     "/jobs/:id",
-    requireAdmin,
     zValidator("param", idParam, validationHook),
     zValidator("json", JobUpdate, validationHook),
     async (c) => {
@@ -44,7 +43,6 @@ export const jobsApi = new Hono<AppEnv>()
   )
   .post(
     "/jobs/:id/approve",
-    requireAdmin,
     zValidator("param", idParam, validationHook),
     zValidator("json", JobApprove, validationHook),
     async (c) => {
@@ -54,13 +52,8 @@ export const jobsApi = new Hono<AppEnv>()
       return c.json({ data: await svc.approve(db, id, level) }, 200);
     },
   )
-  .post(
-    "/jobs/:id/reject",
-    requireAdmin,
-    zValidator("param", idParam, validationHook),
-    async (c) => {
-      const { id } = c.req.valid("param");
-      const db = drizzle(c.env.DB);
-      return c.json({ data: await svc.reject(db, id) }, 200);
-    },
-  );
+  .post("/jobs/:id/reject", zValidator("param", idParam, validationHook), async (c) => {
+    const { id } = c.req.valid("param");
+    const db = drizzle(c.env.DB);
+    return c.json({ data: await svc.reject(db, id) }, 200);
+  });

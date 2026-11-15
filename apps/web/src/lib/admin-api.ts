@@ -44,6 +44,10 @@ async function request<R extends ClientResponse<unknown, number, "json">>(
 
 const PAGE_SIZE = 50;
 
+export function me(): Promise<{ email: string }> {
+  return request(client.me.$get());
+}
+
 export type Job = InferResponseType<(typeof client.jobs)[":id"]["$get"], 200>["data"];
 export type JobStatus = Job["status"];
 export type Company = InferResponseType<typeof client.companies.$get, 200>["data"][number];

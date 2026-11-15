@@ -7,7 +7,7 @@ import {
 } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import { finishIngestRun, ingestibleSources } from "@hirejuniors/db/queries";
-import { ingestSource, recordSourceFailure, startRun, type SourceCounts } from "./ingest";
+import { ingestSource, recordSourceFailure, startRun } from "./ingest";
 import { classifyStep } from "./classify";
 import { discoverStep, listingsCandidates, trialEval } from "./discover";
 import { expireJobs } from "./retire";

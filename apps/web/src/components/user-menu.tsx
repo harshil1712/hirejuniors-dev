@@ -1,24 +1,9 @@
 import { Button, DropdownMenu } from "@cloudflare/kumo";
-import { CaretDown, Gear, SignOut } from "@phosphor-icons/react";
-import { useNavigate } from "@tanstack/react-router";
-import { signOut } from "../lib/auth-client";
-import { authErrorMessage } from "../lib/auth-errors";
-import { toast } from "../lib/toast";
+import { CaretDown, SignOut } from "@phosphor-icons/react";
 
-/** Header account menu: who's signed in, Settings, Sign out. */
-export function UserMenu({ user }: { user: { email: string; name?: string | null } }) {
-  const navigate = useNavigate();
-  const initial = (user.name?.trim() || user.email || "?")[0].toUpperCase();
-
-  const handleSignOut = async () => {
-    const r = await signOut();
-    if (r.error) {
-      toast.error("Couldn't sign out", authErrorMessage(r.error));
-      return;
-    }
-    // Full reload clears every cached session read.
-    location.assign("/sign-in");
-  };
+/** Header account menu: the Access-admitted email + Access sign-out. */
+export function UserMenu({ email }: { email: string }) {
+  const initial = (email || "?")[0].toUpperCase();
 
   return (
     <DropdownMenu>
@@ -35,7 +20,7 @@ export function UserMenu({ user }: { user: { email: string; name?: string | null
             >
               {initial}
             </span>
-            <span className="hidden max-w-48 truncate text-sm sm:inline">{user.email}</span>
+            <span className="hidden max-w-48 truncate text-sm sm:inline">{email}</span>
             <CaretDown size={12} aria-hidden />
           </Button>
         }
@@ -43,17 +28,11 @@ export function UserMenu({ user }: { user: { email: string; name?: string | null
       <DropdownMenu.Content align="end">
         <DropdownMenu.Group>
           <DropdownMenu.Label>
-            <span className="block truncate font-medium text-kumo-default">
-              {user.name || user.email}
-            </span>
-            {user.name && <span className="block truncate text-kumo-subtle">{user.email}</span>}
+            <span className="block truncate font-medium text-kumo-default">{email}</span>
           </DropdownMenu.Label>
         </DropdownMenu.Group>
         <DropdownMenu.Separator />
-        <DropdownMenu.Item icon={Gear} onClick={() => void navigate({ to: "/settings" })}>
-          Settings
-        </DropdownMenu.Item>
-        <DropdownMenu.Item icon={SignOut} onClick={() => void handleSignOut()}>
+        <DropdownMenu.Item icon={SignOut} onClick={() => location.assign("/cdn-cgi/access/logout")}>
           Sign out
         </DropdownMenu.Item>
       </DropdownMenu.Content>

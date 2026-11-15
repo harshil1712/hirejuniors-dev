@@ -45,10 +45,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           OWNER_ADMIN_EMAIL: ${{ secrets.OWNER_ADMIN_EMAIL }}
-          # alchemy.run.ts gates prod resources (custom domains, real Turnstile
-          # widget, email subdomain) on ALCHEMY_STAGE — required.
+          # alchemy.run.ts gates prod resources (custom domains, the Access
+          # application's real policy) on ALCHEMY_STAGE — required.
           ALCHEMY_STAGE: prod
         # CI has no terminal: --yes approves the plan (the reviewed PR is the
         # approval) and bootstraps Alchemy's state store on the first run.
@@ -61,7 +60,11 @@ jobs:
           set -e
           probe() { curl -s -o /dev/null -w "%{http_code}" --retry 6 --retry-delay 10 --retry-all-errors --max-time 20 "$1"; }
           c=$(probe "https://$DOMAIN/"); [ "$c" = 200 ] || exit 1
-          c=$(probe "https://app.$DOMAIN/api/health"); [ "$c" = 200 ] || exit 1
+          # The dashboard sits behind Cloudflare Access — unauthenticated
+          # calls get a 302 to the Access login, which is the healthy answer.
+          h=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" --retry 6 --retry-delay 10 --retry-all-errors --max-time 20 "https://app.$DOMAIN/api/health")
+          echo "app.$DOMAIN/api/health -> $h"
+          [ "${h%% *}" = 302 ] && [[ "$h" == *cloudflareaccess.com* ]] || exit 1
       - name: Roll back on smoke failure
         if: failure() && steps.smoke.outcome == 'failure'
         env:

@@ -11,7 +11,7 @@ We love when people contribute to the project. Refer to the [CONTRIBUTING.md](./
 ## Built With 💪
 
 - React SPA (Vite + TanStack Router + Kumo UI) on Cloudflare Workers
-- Hono API worker — Better Auth, D1 via Drizzle ORM, Turnstile
+- Hono API worker — owner-gated via Cloudflare Access, D1 via Drizzle ORM
 - Astro job board (server-rendered over D1)
 - Cloudflare Workflows for weekly job ingest and retirement
 - Alchemy IaC (one stack for D1, workers, domains, previews)
@@ -22,7 +22,7 @@ We love when people contribute to the project. Refer to the [CONTRIBUTING.md](./
 
 ```sh
 vp install
-cp .env.example .env        # fill in BETTER_AUTH_SECRET at minimum
+cp .env.example .env
 ```
 
 ### Development
@@ -40,11 +40,11 @@ CLOUDFLARE_ACCOUNT_ID=<your-account-id> \
 Start the dev servers:
 
 ```sh
-vp run dev          # app on http://localhost:1338 (emails land in .alchemy/local/email as .eml)
+vp run dev          # app on http://localhost:1338 (Access stub signs you in)
 vp run dev:site     # marketing site on http://localhost:1337
 ```
 
-Sign up with any email; the verification email is written to `.alchemy/local/email/*.eml` — open it and click the link. Set `OWNER_ADMIN_EMAIL` to your email before signing up to get the admin area.
+Local dev simulates the Access identity (`dev@localhost`, or `OWNER_ADMIN_EMAIL` when set) — every request reaches the app already admitted.
 
 `project.config.ts` is the single source for name/domain/product name — `alchemy.run.ts`, both apps and `scripts/init.ts` read it.
 

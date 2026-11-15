@@ -2,11 +2,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { SPA_CSP } from "./security-headers";
 import { requestId } from "hono/request-id";
-import { authRateLimit } from "./middleware/rate-limit";
-import { createAuth } from "./auth";
-import { publicConfigRoutes } from "./routes/public-config";
-import { meRoutes } from "./routes/me";
-import { sessionPrincipal } from "./middleware/principal";
+import { requireOwner } from "./middleware/owner";
 import { api, type ApiRoutes } from "./api";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -48,30 +44,14 @@ app.onError((err, c) => {
   return c.json({ error: "Something went wrong. Please try again." }, 500);
 });
 
+// Health is the only unauthenticated API route — registered before the
+// owner gate below so its response wins.
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
-app.route("/", publicConfigRoutes);
-app.route("/", meRoutes);
-
-// Session-authenticated dashboard APIs for the web app.
-for (const name of ["jobs", "companies", "sources", "runs", "dashboard", "discovery"]) {
-  app.use(`/api/${name}`, sessionPrincipal);
-  app.use(`/api/${name}/*`, sessionPrincipal);
-}
+// Everything else under /api requires the Access-admitted owner identity
+// (Cloudflare Access fronts the app — see `access` in alchemy.run.ts).
+app.use("/api/*", requireOwner);
 app.route("/api", api);
-
-// Better Auth handler — catches all /api/auth/* requests (sign-in, sign-up,
-// email verification, reset, admin plugin endpoints, OAuth callbacks).
-// Mutations are IP-rate-limited (brute-force surface).
-app.use("/api/auth/*", async (c, next) => {
-  if (c.req.method === "POST") return authRateLimit(c, next);
-  await next();
-});
-app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-  const res = await createAuth(c.env).handler(c.req.raw);
-  // Copy before mutation — the handler's response headers are immutable.
-  return new Response(res.body, res);
-});
 
 app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 

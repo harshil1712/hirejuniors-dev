@@ -13,5 +13,5 @@ declare module "#project" {
 /** Worker bindings exposed to SSR pages via cloudflare:workers (the Alchemy
  * Astro adapter injects the runtime; env mirrors the Site env block). */
 declare module "cloudflare:workers" {
-  export const env: { DB: D1Database; PUBLIC_APP_URL?: string };
+  export const env: { DB: D1Database };
 }
