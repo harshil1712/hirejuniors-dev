@@ -47,7 +47,9 @@ function JobDetail() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      setJob(await getJob(id));
+      const j = await getJob(id);
+      setJob(j);
+      setApproveLevel(j.level ?? "junior");
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -86,7 +88,9 @@ function JobDetail() {
               >
                 Apply
               </Button>
-              {(job.status === "review" || job.status === "rejected") && (
+              {(job.status === "review" ||
+                job.status === "rejected" ||
+                job.status === "pending") && (
                 <>
                   <Select
                     label="Level"
@@ -112,7 +116,7 @@ function JobDetail() {
                   </Button>
                 </>
               )}
-              {job.status !== "rejected" && (
+              {(job.status === "review" || job.status === "pending" || job.status === "active") && (
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -129,12 +133,16 @@ function JobDetail() {
                   Reject
                 </Button>
               )}
-              <Button
-                variant={retire ? "destructive" : "primary"}
-                onClick={() => setConfirmOpen(true)}
-              >
-                {retire ? "Retire" : "Restore"}
-              </Button>
+              {job.status === "active" && (
+                <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+                  Retire
+                </Button>
+              )}
+              {job.status === "retired" && (
+                <Button variant="primary" onClick={() => setConfirmOpen(true)}>
+                  Restore
+                </Button>
+              )}
             </div>
           ) : undefined
         }
