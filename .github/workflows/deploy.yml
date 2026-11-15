@@ -46,10 +46,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           OWNER_ADMIN_EMAIL: ${{ secrets.OWNER_ADMIN_EMAIL }}
-          SIGNUP_DISABLED: ${{ vars.SIGNUP_DISABLED }}
           # alchemy.run.ts gates prod resources (custom domains, real Turnstile
           # widget, email subdomain) on ALCHEMY_STAGE — required.
           ALCHEMY_STAGE: prod

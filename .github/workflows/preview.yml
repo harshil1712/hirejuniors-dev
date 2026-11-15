@@ -27,6 +27,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PR_NAME: pr-${{ github.event.pull_request.number }}
+          OWNER_ADMIN_EMAIL: ${{ secrets.OWNER_ADMIN_EMAIL }}
         # previews keep no sessions worth preserving: a throwaway auth secret per run
         run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) npx alchemy deploy --stage pr-${{ github.event.pull_request.number }} --yes
       - name: Notice when secrets are missing
@@ -37,7 +38,7 @@ jobs:
         run: |
           W="https://pr-${{ github.event.pull_request.number }}-hirejuniors-web.${{ secrets.WORKERS_DEV_SUBDOMAIN }}.workers.dev"
           S="https://pr-${{ github.event.pull_request.number }}-hirejuniors-site.${{ secrets.WORKERS_DEV_SUBDOMAIN }}.workers.dev"
-          for u in "$W/api/health" "$S/"; do code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$u"); echo "$u -> $code"; done
+          for u in "$W/api/health" "$S/"; do code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$u"); echo "$u -> $code"; [ "$code" = 200 ] || exit 1; done
   cleanup:
     runs-on: ubuntu-latest
     if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
