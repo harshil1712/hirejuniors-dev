@@ -187,7 +187,7 @@ describe("careers_page ingest", () => {
       src.id,
       ctx(
         fakeBrowser({
-          "https://acme.com/team": "[X](https://acme.com/j/9)",
+          "https://acme.com/team": "[Intern X](https://acme.com/j/9)",
           "https://acme.com/j/9": "x",
         }),
         lowAi,
@@ -201,7 +201,7 @@ describe("careers_page ingest", () => {
   it("existing links re-seen without a page fetch; missing link retires", async () => {
     const src = await seed("cp_c", "https://acme.com/work");
     const calls: string[] = [];
-    const listing1 = "[A](https://acme.com/j/a)\n[B](https://acme.com/j/b)";
+    const listing1 = "[Intern A](https://acme.com/j/a)\n[Intern B](https://acme.com/j/b)";
     const runId = await startRun(db(), "manual", "inst-cp-c1");
     await ingestSource(
       db(),
@@ -229,7 +229,10 @@ describe("careers_page ingest", () => {
       db(),
       runId2,
       src.id,
-      ctx(fakeBrowser({ "https://acme.com/work": "[A](https://acme.com/j/a)" }, calls), clairic),
+      ctx(
+        fakeBrowser({ "https://acme.com/work": "[Intern A](https://acme.com/j/a)" }, calls),
+        clairic,
+      ),
     );
     expect(calls).not.toContain("https://acme.com/j/a");
     let [jb] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/b"));
@@ -241,7 +244,10 @@ describe("careers_page ingest", () => {
       db(),
       runId3,
       src.id,
-      ctx(fakeBrowser({ "https://acme.com/work": "[A](https://acme.com/j/a)" }, calls), clairic),
+      ctx(
+        fakeBrowser({ "https://acme.com/work": "[Intern A](https://acme.com/j/a)" }, calls),
+        clairic,
+      ),
     );
     [jb] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/b"));
     expect(jb.status).toBe("retired");
@@ -252,8 +258,8 @@ describe("careers_page ingest", () => {
     const src = await seed("cp_d", "https://acme.com/jobs");
     const LIST2 = "https://acme.com/jobs";
     const listing1 =
-      "[Old](https://acme.com/j/old)\n" +
-      Array.from({ length: 35 }, (_, i) => `[N${i}](https://acme.com/j/n${i})`).join("\n");
+      "[Intern Old](https://acme.com/j/old)\n" +
+      Array.from({ length: 35 }, (_, i) => `[Intern N${i}](https://acme.com/j/n${i})`).join("\n");
     const pages: PageMap = { [LIST2]: listing1 };
     for (let i = 0; i < 35; i++) pages[`https://acme.com/j/n${i}`] = "x";
     pages["https://acme.com/j/old"] = "old";
@@ -278,7 +284,7 @@ describe("careers_page ingest", () => {
   it("retired non-manual job reactivates when its link reappears; manual stays retired", async () => {
     const src = await seed("cp_e", "https://acme.com/hiring");
     const listing1 =
-      "[A](https://acme.com/j/ea)\n[B](https://acme.com/j/eb)\n[C](https://acme.com/j/ec)";
+      "[Intern A](https://acme.com/j/ea)\n[Intern B](https://acme.com/j/eb)\n[Intern C](https://acme.com/j/ec)";
     const runId = await startRun(db(), "manual", "inst-cp-e1");
     await ingestSource(
       db(),
@@ -372,7 +378,7 @@ describe("title cleaning + front matter (spec §Careers-page ingest)", () => {
       src.id,
       ctx(
         fakeBrowser({
-          "https://acme.com/roles": "[Dev](https://acme.com/j/5)",
+          "https://acme.com/roles": "[Intern Dev](https://acme.com/j/5)",
           "https://acme.com/j/5": md,
         }),
         spyAi,

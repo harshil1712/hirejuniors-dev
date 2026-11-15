@@ -4,6 +4,7 @@ import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { company, discoveryCandidate, discoveryCursor, job, source } from "@hirejuniors/db/schema";
+import { chunks } from "@hirejuniors/db/queries";
 import type { Db } from "./ingest";
 import type { BatchItem } from "drizzle-orm/batch";
 import { adapterFor, type AdapterCtx, type Fetcher } from "./platforms";
@@ -547,6 +548,58 @@ export async function crawlHost(
   } catch {
     return 0; // log + move on — caller logs
   }
+}
+
+/** SimplifyJobs early-career listing feeds (spec §Discovery → Listings). */
+export const LISTING_FEEDS = [
+  "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json",
+  "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json",
+] as const;
+
+/**
+ * Best-effort listings step — never throws: a failing or malformed feed is
+ * skipped, the rest still insert. Returns the number of distinct
+ * `<platform>:<board>` inputs found across feeds.
+ */
+export async function listingsCandidates(
+  db: Db,
+  fetcher: Fetcher,
+  feeds: readonly string[] = LISTING_FEEDS,
+): Promise<number> {
+  const rowSchema = z.object({ url: z.string(), active: z.boolean().optional() });
+  const inputs = new Set<string>();
+  for (const feed of feeds) {
+    try {
+      const res = await fetcher(feed, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) continue;
+      const rows = z.array(z.unknown()).safeParse(await res.json());
+      if (!rows.success) continue;
+      for (const row of rows.data) {
+        const parsed = rowSchema.safeParse(row);
+        if (!parsed.success || parsed.data.active === false) continue;
+        for (const { platform, board } of atsLinks(parsed.data.url)) {
+          inputs.add(`${platform}:${board}`);
+        }
+      }
+    } catch {
+      // record nothing for this list and move on
+    }
+  }
+  try {
+    // unique index on input → repeat runs are no-ops
+    const statements: BatchItem<"sqlite">[] = [...inputs].map((input) =>
+      db
+        .insert(discoveryCandidate)
+        .values({ id: `dsc_${nanoid(16)}`, origin: "crawl", input })
+        .onConflictDoNothing(),
+    );
+    for (const chunk of chunks(statements, 100)) {
+      await db.batch(chunk as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+    }
+  } catch {
+    return 0;
+  }
+  return inputs.size;
 }
 
 /** Newest Common Crawl collection → { crawlId, cdxApi } or null on error. */

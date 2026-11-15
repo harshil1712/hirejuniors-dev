@@ -5,7 +5,7 @@ import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { ingestRun, job, source, sourceRun } from "@hirejuniors/db/schema";
 import { chunks, markSourceResult, sourceWithCompany, type Db } from "@hirejuniors/db/queries";
-import { isExcluded } from "./classify";
+import { hasEarlySignal, isExcluded } from "./classify";
 import { htmlToText } from "./html";
 import { parseLocation } from "./location";
 import { adapterFor, type AdapterCtx, type RawListing } from "./platforms";
@@ -85,7 +85,7 @@ export async function upsertListings(
   const statements: BatchItem<"sqlite">[] = [];
 
   for (const l of listings) {
-    if (isExcluded(l.title)) continue;
+    if (isExcluded(l.title) || (!src.includeAll && !hasEarlySignal(l.title))) continue;
     if (seen.has(l.externalId)) continue; // duplicate in one feed — first wins
     counts.kept++;
     seen.add(l.externalId);

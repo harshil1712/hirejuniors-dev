@@ -43,6 +43,20 @@ export function isExcluded(title: string): boolean {
   return EXCLUDED.test(title) && !EARLY_CAREER.test(title);
 }
 
+const EARLY_SIGNAL = new RegExp(
+  [
+    ...RULES.map(([, p]) => p.source),
+    String.raw`\b(trainee|students?|associates?|fellow(ship)?s?|residency|university)\b`,
+    String.raw`\b(engineer|developer|analyst|scientist|designer)\s+(i|1)\b`,
+  ].join("|"),
+  "i",
+);
+
+/** Spec §Classification 1 — early-career title gate (non-include_all sources). */
+export function hasEarlySignal(title: string): boolean {
+  return EARLY_SIGNAL.test(title);
+}
+
 /** Match a title (+ optional employmentType hint) to a junior level. */
 export function classifyLevel(title: string, employmentTypeHint?: string): Level | null {
   for (const [level, pattern] of RULES) {
@@ -62,6 +76,12 @@ export interface ClassifyCounts {
 function choice(a: QuestionAnswer | undefined): { choice: string; p: number } | null {
   if (!a || a.type !== "choice") return null;
   return { choice: a.choice, p: a.probabilities[a.choice] ?? 0 };
+}
+/** Spec §Classification 3 — early-career vs not; the level is only the label. */
+function levelChoice(a: QuestionAnswer | undefined): { choice: string; p: number } | null {
+  const c = choice(a);
+  if (!c || c.choice === "not_early_career" || a?.type !== "choice") return c;
+  return { choice: c.choice, p: 1 - (a.probabilities.not_early_career ?? 0) };
 }
 function noul(a: QuestionAnswer | undefined): number | null {
   return a && a.type === "noul" ? a.noul : null;
@@ -161,7 +181,7 @@ async function decideJob(
   let model: DecideModel = "clef-flash";
   let res = await ai.decide(model, state, DECIDE_QUESTIONS);
   let inputTokens = res.inputTokens;
-  let pLevel = choice(res.answers.level);
+  let pLevel = levelChoice(res.answers.level);
   let pTech = noul(res.answers.is_tech);
   // Spec §Classification step 3 — the same 4 ordered rules evaluated with
   // per-model thresholds; the first rule that fires decides.
@@ -171,7 +191,7 @@ async function decideJob(
     model = "clef";
     res = await ai.decide(model, state, DECIDE_QUESTIONS);
     inputTokens += res.inputTokens;
-    pLevel = choice(res.answers.level);
+    pLevel = levelChoice(res.answers.level);
     pTech = noul(res.answers.is_tech);
     rule = evalDecision(pLevel, pTech, 0.7, 0.7, 0.3);
   }

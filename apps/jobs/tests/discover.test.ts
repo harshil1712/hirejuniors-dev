@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { discoveryCandidate, source } from "@hirejuniors/db/schema";
-import { crawlHost, discoverStep, normalizeDomain } from "../src/discover";
+import { crawlHost, discoverStep, listingsCandidates, normalizeDomain } from "../src/discover";
 import { db, migrate, seedCompany, seedSource } from "./helpers";
 
 beforeAll(migrate);
@@ -416,5 +416,98 @@ describe("slug-guess plausibility (spec §Discovery step 3)", () => {
     const c = await getCand("dsc_p5");
     expect(c.status).toBe("found");
     expect(c.board).toBe("acmeats");
+  });
+});
+
+describe("listingsCandidates", () => {
+  const feed = (rows: unknown[]) =>
+    new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  const FEED_A = "https://raw.test/feed-a.json";
+  const FEED_B = "https://raw.test/feed-b.json";
+
+  async function crawlInputs() {
+    const rows = await db()
+      .select({ input: discoveryCandidate.input, origin: discoveryCandidate.origin })
+      .from(discoveryCandidate)
+      .where(eq(discoveryCandidate.origin, "crawl"));
+    return rows;
+  }
+
+  it("parses ATS urls across two feeds; skips workday, inactive, malformed, dupes", async () => {
+    const f = fetcher({
+      "feed-a": feed([
+        { url: "https://boards.greenhouse.io/stripe", active: true },
+        { url: "https://job-boards.greenhouse.io/datadog", active: true },
+        { url: "https://jobs.lever.co/ramp" },
+        { url: "https://boards.greenhouse.io/stripe", active: true }, // dup
+        { url: "https://acme.myworkdayjobs.com/careers", active: true }, // ignored
+        { url: "https://jobs.lever.co/inactiveco", active: false },
+        { url: 42 }, // malformed
+        "not an object",
+      ]),
+      "feed-b": feed([
+        { url: "https://jobs.ashbyhq.com/notion", active: true },
+        { url: "https://jobs.lever.co/ramp" }, // dup across feeds
+      ]),
+    });
+    const n = await listingsCandidates(db(), f, [FEED_A, FEED_B]);
+    expect(n).toBe(4);
+    const inputs = (await crawlInputs()).map((r) => r.input);
+    expect(inputs).toEqual(
+      expect.arrayContaining([
+        "ashby:notion",
+        "greenhouse:datadog",
+        "greenhouse:stripe",
+        "lever:ramp",
+      ]),
+    );
+    // workday / inactive rows produced no candidates
+    expect(inputs.filter((i) => i.includes("acme") || i.includes("inactiveco"))).toEqual([]);
+  });
+
+  it("one feed 500s and one returns invalid JSON → other's candidates still insert", async () => {
+    const f = fetcher({
+      "feed-a": new Response(null, { status: 500 }),
+      "feed-b": feed([{ url: "https://jobs.lever.co/okco", active: true }]),
+    });
+    const n = await listingsCandidates(db(), f, [FEED_A, FEED_B]);
+    expect(n).toBe(1);
+    const f2 = fetcher({
+      "feed-a": new Response("<html>not json</html>", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      "feed-b": feed([{ url: "https://jobs.ashbyhq.com/okco2", active: true }]),
+    });
+    const n2 = await listingsCandidates(db(), f2, [FEED_A, FEED_B]);
+    expect(n2).toBe(1);
+    const inputs = (await crawlInputs()).map((r) => r.input).sort();
+    expect(inputs).toContain("lever:okco");
+    expect(inputs).toContain("ashby:okco2");
+  });
+
+  it("a feed with 250 boards inserts 250 candidates (D1 param-limit guard)", async () => {
+    const rows = Array.from({ length: 250 }, (_, i) => ({
+      url: `https://boards.greenhouse.io/bulk${i}`,
+      active: true,
+    }));
+    const f = fetcher({ "feed-a": feed(rows) });
+    const n = await listingsCandidates(db(), f, [FEED_A]);
+    expect(n).toBe(250);
+    const inputs = (await crawlInputs()).map((r) => r.input);
+    for (let i = 0; i < 250; i++) expect(inputs).toContain(`greenhouse:bulk${i}`);
+  });
+
+  it("calling twice doesn't duplicate rows", async () => {
+    const f = fetcher({
+      "feed-a": feed([{ url: "https://boards.greenhouse.io/dupe", active: true }]),
+    });
+    await listingsCandidates(db(), f, [FEED_A]);
+    await listingsCandidates(db(), f, [FEED_A]);
+    const rows = (await crawlInputs()).filter((r) => r.input === "greenhouse:dupe");
+    expect(rows).toHaveLength(1);
   });
 });

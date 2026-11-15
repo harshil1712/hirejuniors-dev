@@ -199,7 +199,26 @@ When a newer collection appears, start new cursors for it. The index
 returned 504s during design (2026-11-15), so every crawl call is wrapped:
 on error, log + record nothing + move on; the cursor is not advanced.
 
-Crawl candidates skip steps 1–3 and go straight to `probe`.
+**Listings (early-career job lists).** Common Crawl's index refused every
+connection in the real runs, so the dependable automatic source is the two
+community-maintained early-career lists, which link straight to ATS
+postings:
+
+- `https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json`
+- `https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json`
+
+Each is a JSON array of `{ url, active, … }` (~13 MB). One step
+`discover:listings`, best-effort like the crawl: per list, fetch (30 s
+timeout), parse tolerantly (array of objects with string `url` and optional
+boolean `active`; skip other rows), keep `active !== false`, run the same
+ATS patterns as step 1 over each `url`, and insert `origin = 'crawl'`,
+`input = '<platform>:<board>'` rows with `INSERT OR IGNORE` (D1 batches of
+≤ 100 statements). Only the board is taken; jobs still come from the
+platform API. Workday and other links are ignored. On any error, record
+nothing for that list and move on. In 2026-11 the lists held ~700 distinct
+Greenhouse/Lever/Ashby boards with active junior roles.
+
+Crawl and listings candidates skip steps 1–3 and go straight to `probe`.
 
 **Creating the source.** On `found`: if `(platform, board)` already exists
 → candidate `duplicate` with `source_id` = existing. Otherwise insert
@@ -241,8 +260,18 @@ re-classified by rules (§2), never by Clef. In all cases
 (senior, sr, staff, principal, lead, manager, director, head of, vp, chief —
 word-boundary, case-insensitive) → listing is dropped, never stored. Exception
 so "Sales Lead Intern"-style titles survive: if the title also matches the
-internship/apprenticeship/graduate patterns, don't drop it. Everything else
-is stored as `pending`.
+internship/apprenticeship/graduate patterns, don't drop it.
+
+**Early-career title gate.** Outside `include_all` sources, a title must
+also carry an early-career signal (`hasEarlySignal(title)`): any of the
+four level patterns in `classifyLevel`, or `trainee`, `student(s)`,
+`associate(s)`, `fellow(ship)(s)`, `residency`, `university`, or a level-one
+suffix (`engineer|developer|analyst|scientist|designer` followed by `I` or
+`1`). Titles without one are dropped like excluded titles. Measured on the
+real run (286 boards, 14k listings): titles without a signal were 1,590
+model rejects, 73 review and 16 approvals (mostly mid-level), and 78 % of
+the pending backlog; keeping them cost ~5× the model calls for ~8 % of
+approvals. Everything else is stored as `pending`.
 
 **2. `include_all` sources.** Level = `classifyLevel(title)` ?? `graduate`,
 status `active`, `classified_by = 'rules'`. No Clef call. (Clairic still runs.)
@@ -321,7 +350,12 @@ Questions:
 }
 ```
 
-Let `pLevel = probabilities[level.choice]`, `pTech = is_tech.noul`.
+Let `pTech = is_tech.noul`. `pLevel = probabilities.not_early_career` when
+`level.choice = not_early_career`, otherwise `1 − probabilities.not_early_career`
+— the question to decide is "early career or not"; which early-career level
+is only the label. (Real run: Clef split "Engineer I" roles between `junior`
+0.50 and `graduate` 0.44 with `not_early_career` 0.04, so a top-choice
+probability sent clearly junior roles to review.)
 
 Each model call is evaluated with its own thresholds — Flash: `T = 0.80`,
 `techHigh = 0.80`, `techLow = 0.20`; Clef: `T = 0.70`, `techHigh = 0.70`,
@@ -349,7 +383,7 @@ extraction; persist only via §Extraction rules. Rejected jobs get
 
 A Clef error (binding throws / non-2xx) throws the step → Workflow retries
 (3, exponential); after retries the job stays `pending` and the run moves
-on. The classify loop stops after **50 steps** (1,000 jobs) per run; the rest
+on. The classify loop stops after **100 steps** (2,000 jobs) per run; the rest
 wait for the next run.
 
 ## Extraction (`extract.ts`)
@@ -471,13 +505,14 @@ reactivated by the next feed, and retired again.)
 Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 
 1. `start` — insert `ingest_run`.
-2. `discover:crawl:<host>` — one step per host, best-effort (caught).
+2. `discover:listings`, then `discover:crawl:<host>` — one step per host;
+   all best-effort (caught).
 3. `discover:<n>` — probe queued candidates (≤ 10 steps × 15).
 4. `load sources` — enabled sources + `no_junior_roles` sources due for retry
    (re-enabled as trial).
 5. `ingest:<sourceId>` — per source (retries 3): fetch → shrink guard →
    pre-filter → upsert (new/changed → `pending`) → feed diff.
-6. `classify:<n>` — ≤ 50 steps × 20 pending jobs: decision + extraction.
+6. `classify:<n>` — ≤ 100 steps × 20 pending jobs: decision + extraction.
 7. `trial` — trial evaluation for sources ingested this run.
 8. `expire`.
 9. `linkcheck:select`, `linkcheck:<n>` — link + page check, breaker.

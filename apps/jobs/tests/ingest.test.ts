@@ -29,6 +29,29 @@ describe("upsertListings", () => {
     expect(j.contentHash).toBeTruthy();
   });
 
+  it("title gate: non-include_all drops signal-less titles; include_all keeps both", async () => {
+    const src = await seedSource({ id: "src_gate01", companyId: "cmp_ing01", board: "gate1" });
+    const counts = await upsertListings(db(), src, "ingco", [
+      listing({ externalId: "plain", title: "Software Engineer" }),
+      listing({ externalId: "early", title: "Software Engineer Intern" }),
+    ]);
+    expect(counts.inserted).toBe(1);
+    const rows = await jobsFor("src_gate01");
+    expect(rows.map((r) => r.title)).toEqual(["Software Engineer Intern"]);
+
+    const allSrc = await seedSource({
+      id: "src_gate02",
+      companyId: "cmp_ing01",
+      board: "gate2",
+      includeAll: true,
+    });
+    const c2 = await upsertListings(db(), allSrc, "ingco", [
+      listing({ externalId: "plain2", title: "Software Engineer" }),
+      listing({ externalId: "early2", title: "Software Engineer Intern" }),
+    ]);
+    expect(c2.inserted).toBe(2);
+  });
+
   it("drops excluded titles; intern exception survives", async () => {
     const src = await seedSource({ id: "src_ing02", companyId: "cmp_ing01", board: "ingco2" });
     const counts = await upsertListings(db(), src, "ingco", [

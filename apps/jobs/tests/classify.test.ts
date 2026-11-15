@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { job } from "@hirejuniors/db/schema";
-import { classifyLevel, classifyStep, isExcluded } from "../src/classify";
+import { classifyLevel, classifyStep, hasEarlySignal, isExcluded } from "../src/classify";
 import type { DecideModel, DecideResult, QuestionAnswer } from "../src/ai";
 import { db, migrate, seedCompany, seedSource } from "./helpers";
 
@@ -25,6 +25,10 @@ function accepted(level: string, pLevel = 0.9, pTech = 0.9) {
     salary_currency: choice("USD", 0.9),
     salary_period: choice("YEAR", 0.9),
   };
+}
+/** Level answer with an explicit full probability distribution. */
+function levelAns(choiceName: string, probabilities: Record<string, number>): QuestionAnswer {
+  return { type: "choice", choice: choiceName, probabilities };
 }
 
 function ai(decideImpl: (model: DecideModel) => DecideResult, extractImpl?: () => never) {
@@ -72,6 +76,27 @@ async function insertJob(over: Partial<typeof job.$inferInsert> = {}) {
 async function getJob(id: string) {
   return (await db().select().from(job).where(eq(job.id, id)))[0];
 }
+
+describe("hasEarlySignal (spec §Classification title gate)", () => {
+  const yes = [
+    "Software Engineer Intern",
+    "New Grad SWE",
+    "Software Engineer I",
+    "Data Analyst 1",
+    "Associate Software Engineer",
+    "Working Student",
+    "Graduate Developer",
+  ];
+  const no = [
+    "Software Engineer",
+    "Software Engineer II",
+    "Internal Tools Engineer",
+    "International Sales",
+    "Product Designer",
+  ];
+  for (const t of yes) it(`yes: ${t}`, () => expect(hasEarlySignal(t)).toBe(true));
+  for (const t of no) it(`no: ${t}`, () => expect(hasEarlySignal(t)).toBe(false));
+});
 
 describe("rules", () => {
   const cases: [string, string | undefined, string | null][] = [
@@ -125,8 +150,14 @@ describe("classifyStep", () => {
     const id = await insertJob();
     const { models, calls } = ai((m) =>
       m === "clef-flash"
-        ? decideResult(accepted("junior", 0.7, 0.9))
-        : decideResult(accepted("graduate", 0.85, 0.9)),
+        ? decideResult({
+            ...accepted("junior", 0.55, 0.9),
+            level: levelAns("junior", { junior: 0.55, graduate: 0.1, not_early_career: 0.3 }),
+          })
+        : decideResult({
+            ...accepted("graduate", 0.75, 0.9),
+            level: levelAns("graduate", { graduate: 0.75, not_early_career: 0.2 }),
+          }),
     );
     const counts = await classifyStep(db(), models);
     expect(calls).toEqual(["clef-flash", "clef"]);
@@ -137,9 +168,31 @@ describe("classifyStep", () => {
     expect(j.classifiedBy).toBe("clef");
   });
 
+  it("split junior/graduate with low not_early_career → accepts on flash (pLevel = 1 − nec)", async () => {
+    const id = await insertJob();
+    const { models, calls } = ai(() =>
+      decideResult({
+        ...accepted("junior", 0.5, 0.95),
+        level: levelAns("junior", { junior: 0.5, graduate: 0.44, not_early_career: 0.04 }),
+      }),
+    );
+    const counts = await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash"]); // no clef escalation
+    expect(counts.classified).toBe(1);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.level).toBe("junior");
+    expect(j.classifiedBy).toBe("clef-flash");
+  });
+
   it("sends to review when neither model accepts", async () => {
     const id = await insertJob();
-    const { models } = ai(() => decideResult(accepted("junior", 0.62, 0.55)));
+    const { models } = ai(() =>
+      decideResult({
+        ...accepted("junior", 0.62, 0.55),
+        level: levelAns("junior", { junior: 0.6, not_early_career: 0.38 }),
+      }),
+    );
     const counts = await classifyStep(db(), models);
     expect(counts.review).toBe(1);
     const j = await getJob(id);

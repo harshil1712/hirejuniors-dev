@@ -9,7 +9,14 @@ import { drizzle } from "drizzle-orm/d1";
 import { finishIngestRun, ingestibleSources, jobsForLinkCheck } from "@hirejuniors/db/queries";
 import { ingestSource, recordSourceFailure, startRun, type SourceCounts } from "./ingest";
 import { classifyStep } from "./classify";
-import { CRAWL_HOSTS, crawlHost, discoverStep, newestCrawl, trialEval } from "./discover";
+import {
+  CRAWL_HOSTS,
+  crawlHost,
+  discoverStep,
+  listingsCandidates,
+  newestCrawl,
+  trialEval,
+} from "./discover";
 import { expireJobs, linkCheckSlice } from "./retire";
 import { aiBinding } from "./ai";
 import { browserBinding } from "./browser";
@@ -27,7 +34,7 @@ const RETRY: WorkflowStepConfig = {
 const INGEST_STEP: WorkflowStepConfig = { ...RETRY, timeout: "10 minutes" };
 const LINK_CHECK_JOBS = 400;
 const LINK_CHECK_BATCH = 40;
-const CLASSIFY_STEPS = 50;
+const CLASSIFY_STEPS = 100;
 const CLASSIFY_BATCH = 20;
 const DISCOVER_STEPS = 10; // ≤150 candidates per run
 
@@ -42,6 +49,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
     const runId = await step.do("start", () => startRun(db, trigger, event.instanceId));
 
     // Crawl — best-effort, every call wrapped; never fails the run.
+    await step.do("discover:listings", () => listingsCandidates(db, fetcher)).catch(() => 0);
     const crawl = await step.do("crawl:index", () => newestCrawl(fetcher)).catch(() => null);
     if (crawl) {
       for (const { host, platform } of CRAWL_HOSTS) {
@@ -120,7 +128,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
       }
     }
 
-    // Classify — ≤25 steps × 20 jobs; a Clef error throws the step → retries.
+    // Classify — ≤100 steps × 20 jobs; a Clef error throws the step → retries.
     for (let n = 0; n < CLASSIFY_STEPS; n++) {
       const counts = await step.do(`classify:${n + 1}`, RETRY, () =>
         classifyStep(db, ai, CLASSIFY_BATCH),
