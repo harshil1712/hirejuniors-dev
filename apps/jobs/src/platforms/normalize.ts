@@ -1,5 +1,5 @@
 /** Map platform-specific labels to schema.org employmentType / workplace. */
-export function normalizeEmploymentType(hint: string | undefined): string | undefined {
+export function normalizeEmploymentType(hint: string | null | undefined): string | undefined {
   if (!hint) return undefined;
   const h = hint.toLowerCase().replace(/[\s_-]+/g, "");
   if (h.includes("intern") || h.includes("coop")) return "INTERN";
@@ -10,7 +10,7 @@ export function normalizeEmploymentType(hint: string | undefined): string | unde
   return "OTHER";
 }
 
-export function normalizeWorkplace(hint: string | undefined): string | undefined {
+export function normalizeWorkplace(hint: string | null | undefined): string | undefined {
   if (!hint) return undefined;
   const h = hint.toLowerCase().replace(/[\s_-]+/g, "");
   if (h.includes("remote")) return "remote";

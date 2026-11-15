@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { job } from "@hirejuniors/db/schema";
 import { ingestSource, startRun } from "../src/ingest";
 import { extractMarkdownLinks, parseJobLinks } from "../src/platforms";
+import { cleanJobTitle } from "../src/platforms/careers-page";
+import { CAREERS_PAGE_FIELDS } from "../src/ai";
 import type { AdapterCtx } from "../src/platforms";
 import type { AiModels } from "../src/ai";
 import type { Browser } from "../src/browser";
@@ -220,8 +222,8 @@ describe("careers_page ingest", () => {
     const [ja] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/a"));
     await db().update(job).set({ status: "active", level: "junior" }).where(eq(job.id, ja.id));
     calls.length = 0;
-    // Second run: only A still listed; B missing → retires; A not re-fetched
-    // (j/a is absent from pages so a fetch would reject).
+    // Second run: only A still listed; B missing → miss 1 of 2 for
+    // careers_page; A not re-fetched (j/a is absent from pages).
     const runId2 = await startRun(db(), "manual", "inst-cp-c2");
     await ingestSource(
       db(),
@@ -230,8 +232,20 @@ describe("careers_page ingest", () => {
       ctx(fakeBrowser({ "https://acme.com/work": "[A](https://acme.com/j/a)" }, calls), clairic),
     );
     expect(calls).not.toContain("https://acme.com/j/a");
-    const [jb] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/b"));
+    let [jb] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/b"));
+    expect(jb.status).toBe("pending"); // still present — threshold is 2
+    expect(jb.missedRuns).toBe(1);
+    // Third run: B missing again → miss 2 → retired.
+    const runId3 = await startRun(db(), "manual", "inst-cp-c3");
+    await ingestSource(
+      db(),
+      runId3,
+      src.id,
+      ctx(fakeBrowser({ "https://acme.com/work": "[A](https://acme.com/j/a)" }, calls), clairic),
+    );
+    [jb] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/b"));
     expect(jb.status).toBe("retired");
+    expect(jb.retireReason).toBe("missing_from_feed");
   });
 
   it("30-new cap: overflow links deferred (not upserted, not retired)", async () => {
@@ -309,5 +323,72 @@ describe("careers_page ingest", () => {
     expect(jb.status).not.toBe("retired");
     const [jc] = await db().select().from(job).where(eq(job.externalId, "https://acme.com/j/ec"));
     expect(jc.status).toBe("retired");
+  });
+});
+
+describe("title cleaning + front matter (spec §Careers-page ingest)", () => {
+  it("cleanJobTitle: heading wins over trailing text", () => {
+    expect(cleanJobTitle("<h2>Support Specialist</h2>Remote: Philippines")).toBe(
+      "Support Specialist",
+    );
+    expect(cleanJobTitle("<h3>Applied ML Engineers</h3> Remote - Americas")).toBe(
+      "Applied ML Engineers",
+    );
+    expect(cleanJobTitle("Junior Dev\nRemote")).toBe("Junior Dev");
+    expect(cleanJobTitle("Data &amp; Analytics Intern")).toBe("Data & Analytics Intern");
+  });
+
+  it("front matter is stripped before markdownToHtml and Clairic", async () => {
+    await seedCompany({ id: "cmp_cp_fm", slug: "cpfm", name: "FM Co" });
+    const src = await seedSource({
+      id: "src_cp_fm",
+      companyId: "cmp_cp_fm",
+      platform: "careers_page",
+      board: "https://acme.com/roles",
+      config: JSON.stringify({ listingUrl: "https://acme.com/roles" }),
+    });
+    const states: string[] = [];
+    const spyAi: AiModels = {
+      decide: (_m, _s, q) =>
+        Promise.resolve({
+          answers: Object.fromEntries(
+            Object.keys(q).map((id) => [id, { type: "noul" as const, noul: 1 }]),
+          ),
+          inputTokens: 1,
+        }),
+      extract: (s) => {
+        states.push(s);
+        return Promise.resolve({
+          answers: { location: { value: "Berlin", confidence: 0.9 } },
+          inputTokens: 1,
+        });
+      },
+    };
+    const md = "---\ntitle: Careers\n---\n# Role\n\nBody text";
+    const runId = await startRun(db(), "manual", "inst-cp-fm");
+    await ingestSource(
+      db(),
+      runId,
+      src.id,
+      ctx(
+        fakeBrowser({
+          "https://acme.com/roles": "[Dev](https://acme.com/j/5)",
+          "https://acme.com/j/5": md,
+        }),
+        spyAi,
+      ),
+    );
+    const [j] = await db().select().from(job).where(eq(job.sourceId, src.id));
+    expect(j.descriptionHtml).not.toContain("title: Careers");
+    expect(j.descriptionHtml).toContain("<h3>Role</h3>");
+    expect(states[0]).not.toContain("title: Careers");
+    expect(states[0]).toContain("Body text");
+    // posted_date field is gone — location only, postedAt stays null.
+    expect(j.postedAt).toBeNull();
+    expect(j.locationRaw).toBe("Berlin");
+  });
+
+  it("CAREERS_PAGE_FIELDS contains location only", () => {
+    expect(Object.keys(CAREERS_PAGE_FIELDS)).toEqual(["location"]);
   });
 });

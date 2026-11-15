@@ -39,13 +39,13 @@ export async function startRun(db: Db, trigger: "schedule" | "manual", instanceI
   return id;
 }
 
-/** sha256hex(title + "\n" + location_raw + "\n" + htmlToText(description_html)). */
+/** sha256hex(title + "\n" + location_raw + "\n" + htmlToText(description_html)) — full text, no cap. */
 export async function contentHash(l: {
   title: string;
   locationRaw: string;
   descriptionHtml?: string | null;
 }): Promise<string> {
-  const text = `${l.title}\n${l.locationRaw}\n${htmlToText(l.descriptionHtml ?? "")}`;
+  const text = `${l.title}\n${l.locationRaw}\n${htmlToText(l.descriptionHtml ?? "", Infinity)}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -75,6 +75,7 @@ export async function upsertListings(
       missedRuns: job.missedRuns,
       contentHash: job.contentHash,
       classifiedBy: job.classifiedBy,
+      validThrough: job.validThrough,
     })
     .from(job)
     .where(eq(job.sourceId, src.id));
@@ -114,7 +115,7 @@ export async function upsertListings(
       region: loc.region,
       countryCode: loc.countryCode,
       descriptionHtml: l.descriptionHtml ?? null,
-      descriptionText: htmlToText(l.descriptionHtml ?? "") || l.title,
+      descriptionText: htmlToText(l.descriptionHtml ?? "", 500) || l.title,
       applyUrl: l.applyUrl,
       postedAt: l.postedAt ?? null,
       sourceUpdatedAt: l.updatedAt ?? null,
@@ -147,6 +148,21 @@ export async function upsertListings(
     if (prev.status === "retired" && prev.retireReason === "manual") {
       counts.updated++;
       statements.push(db.update(job).set(fields).where(eq(job.id, prev.id)));
+    } else if (
+      prev.status === "retired" &&
+      prev.retireReason === "expired" &&
+      prev.validThrough !== null &&
+      prev.validThrough < now
+    ) {
+      // Reappeared but its deadline still passed — stays retired; stamp the
+      // sighting so it isn't counted missing (spec §Expiry).
+      counts.updated++;
+      statements.push(
+        db
+          .update(job)
+          .set({ lastSeenAt: now, missedRuns: 0, updatedAt: now })
+          .where(eq(job.id, prev.id)),
+      );
     } else if (prev.status === "retired") {
       // Reappeared in the feed → reactivated for re-classification.
       counts.reactivated++;
@@ -186,23 +202,33 @@ export async function upsertListings(
     }
   }
 
-  // Feed diff — 1 miss retires (spec: threshold now 1). Reached only when the
-  // fetch + parse fully succeeded and passed the shrink guard.
+  // Feed diff — retire at the platform's miss threshold: 1 for complete
+  // JSON feeds, 2 for careers_page (rendered listings vary between loads).
+  // Reached only when the fetch + parse fully succeeded and passed the
+  // shrink guard.
+  const missThreshold = src.platform === "careers_page" ? 2 : 1;
   for (const prev of existing) {
     if (prev.status === "retired" || seen.has(prev.externalId)) continue;
-    counts.retired++;
-    statements.push(
-      db
-        .update(job)
-        .set({
-          missedRuns: prev.missedRuns + 1,
-          status: "retired",
-          retiredAt: now,
-          retireReason: "missing_from_feed",
-          updatedAt: now,
-        })
-        .where(eq(job.id, prev.id)),
-    );
+    const missedRuns = prev.missedRuns + 1;
+    if (missedRuns >= missThreshold) {
+      counts.retired++;
+      statements.push(
+        db
+          .update(job)
+          .set({
+            missedRuns,
+            status: "retired",
+            retiredAt: now,
+            retireReason: "missing_from_feed",
+            updatedAt: now,
+          })
+          .where(eq(job.id, prev.id)),
+      );
+    } else {
+      statements.push(
+        db.update(job).set({ missedRuns, updatedAt: now }).where(eq(job.id, prev.id)),
+      );
+    }
   }
 
   for (const chunk of chunks(statements, 25)) {

@@ -233,3 +233,15 @@ describe("linkCheckSlice — Browser Run markdown", () => {
     expect(j.lastCheckedAt).not.toBeNull();
   });
 });
+
+describe("expireJobs — no age rule (spec §Expiry)", () => {
+  it("old posted_at alone does NOT expire", async () => {
+    const old = await insertJob({
+      postedAt: new Date(Date.now() - 200 * 86400000),
+      firstSeenAt: new Date(Date.now() - 200 * 86400000),
+      validThrough: null,
+    });
+    await expireJobs(db());
+    expect((await getJob(old)).status).toBe("active");
+  });
+});

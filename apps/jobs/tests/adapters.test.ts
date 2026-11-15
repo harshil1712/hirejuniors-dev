@@ -108,3 +108,65 @@ describe("amazon_jobs adapter", () => {
     expect(url).toBe("https://www.amazon.jobs/en/search.json?result_limit=5");
   });
 });
+
+describe("tolerant parsing (spec §Adapters)", () => {
+  const ghSource = src({ platform: "greenhouse" });
+  const ashbySource = src({ platform: "ashby" });
+
+  it("greenhouse: metadata: null parses", () => {
+    const listings = greenhouse.toListings(
+      {
+        jobs: [
+          { id: 1, title: "Grad", absolute_url: "https://x/1", metadata: null, location: null },
+        ],
+      },
+      ghSource,
+    );
+    expect(listings).toHaveLength(1);
+    expect(listings[0].title).toBe("Grad");
+  });
+
+  it("ashby: isRemote: null and workplaceType: null parse", () => {
+    const listings = ashby.toListings(
+      { jobs: [{ id: "j1", title: "Intern", isRemote: null, workplaceType: null }] },
+      ashbySource,
+    );
+    expect(listings).toHaveLength(1);
+    expect(listings[0].workplaceHint).toBeUndefined();
+  });
+
+  it("1 of 10 invalid → 9 listings kept", () => {
+    const jobs = [
+      ...Array.from({ length: 9 }, (_, i) => ({ id: `v${i}`, title: `Job ${i}` })),
+      { title: 42 },
+    ];
+    expect(ashby.toListings({ jobs }, ashbySource)).toHaveLength(9);
+  });
+
+  it("3 of 10 invalid → throws with the first issue path", () => {
+    const jobs = [
+      ...Array.from({ length: 7 }, (_, i) => ({ id: `v${i}`, title: `Job ${i}` })),
+      { title: 1 },
+      { id: 2 },
+      "not-an-object",
+    ];
+    expect(() => ashby.toListings({ jobs }, ashbySource)).toThrow(/3\/10 jobs invalid — .+/);
+  });
+
+  it("probe: valid envelope with invalid jobs → ok", async () => {
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ jobs: [{ totally: "wrong" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    expect(await ashby.probe!(fetcher, "board")).toEqual({ ok: true });
+    expect(await greenhouse.probe!(fetcher, "board")).toEqual({ ok: true, companyName: undefined });
+    // Lever's envelope is a bare array — invalid jobs still mean ok.
+    const leverFetcher = (async () =>
+      new Response(JSON.stringify([{ totally: "wrong" }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    expect(await lever.probe!(leverFetcher, "board")).toEqual({ ok: true });
+  });
+});

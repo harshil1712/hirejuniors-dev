@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { decodeEntities } from "../html";
 import { normalizeEmploymentType, normalizeWorkplace } from "./normalize";
+import { parseJobList } from "./tolerant";
 import type { PlatformAdapter, RawListing } from "./types";
 
 const configSchema = z.object({}).strict();
@@ -8,30 +9,28 @@ const configSchema = z.object({}).strict();
 const postingSchema = z.object({
   id: z.string(),
   text: z.string(),
-  hostedUrl: z.string().optional(),
-  applyUrl: z.string().optional(),
+  hostedUrl: z.string().nullish(),
+  applyUrl: z.string().nullish(),
   categories: z
     .object({
-      commitment: z.string().optional(),
-      location: z.string().optional(),
-      team: z.string().optional(),
-      department: z.string().optional(),
-      country: z.string().optional(),
+      commitment: z.string().nullish(),
+      location: z.string().nullish(),
+      team: z.string().nullish(),
+      department: z.string().nullish(),
+      country: z.string().nullish(),
     })
-    .optional(),
-  country: z.string().optional(),
-  workplaceType: z.string().optional(),
-  description: z.string().optional(),
-  descriptionPlain: z.string().optional(),
-  lists: z
-    .array(z.object({ text: z.string().optional(), content: z.string().optional() }))
-    .optional(),
-  createdAt: z.number().optional(),
-  updatedAt: z.number().optional(),
+    .nullish(),
+  country: z.string().nullish(),
+  workplaceType: z.string().nullish(),
+  description: z.string().nullish(),
+  descriptionPlain: z.string().nullish(),
+  lists: z.array(z.object({ text: z.string().nullish(), content: z.string().nullish() })).nullish(),
+  createdAt: z.number().nullish(),
+  updatedAt: z.number().nullish(),
 });
 
-const responseSchema = z.array(postingSchema);
-export type LeverPayload = z.input<typeof responseSchema>;
+const envelopeSchema = z.array(z.unknown());
+export type LeverPayload = z.input<typeof envelopeSchema>;
 
 export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> = {
   configSchema,
@@ -44,17 +43,22 @@ export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> 
     return this.toListings(await res.json(), src);
   },
   async probe(fetcher, board) {
+    let res: Response;
     try {
-      const res = await fetcher(`https://api.lever.co/v0/postings/${board}?mode=json`);
-      if (!res.ok) return { ok: false };
-      z.array(z.object({ id: z.string() })).parse(await res.json());
-      return { ok: true };
+      res = await fetcher(`https://api.lever.co/v0/postings/${board}?mode=json`);
     } catch {
       return { ok: false, networkError: true };
     }
+    if (!res.ok) return { ok: false };
+    try {
+      z.array(z.unknown()).parse(await res.json());
+    } catch {
+      return { ok: false }; // answered, but not a Lever payload
+    }
+    return { ok: true };
   },
   toListings(payload, _src): RawListing[] {
-    const postings = responseSchema.parse(payload);
+    const postings = parseJobList(envelopeSchema.parse(payload), postingSchema);
     return postings.map((p) => ({
       externalId: p.id,
       title: p.text,
@@ -62,7 +66,7 @@ export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> 
       locationRaw: p.categories?.location ?? "",
       employmentTypeHint: normalizeEmploymentType(p.categories?.commitment),
       workplaceHint: normalizeWorkplace(p.workplaceType),
-      countryHint: p.country ?? p.categories?.country,
+      countryHint: p.country ?? p.categories?.country ?? undefined,
       descriptionHtml: decodeEntities(
         [p.description, ...(p.lists ?? []).map((l) => l.content)].filter(Boolean).join(""),
       ),

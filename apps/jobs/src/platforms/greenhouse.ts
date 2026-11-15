@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { decodeEntities } from "../html";
+import { parseJobList } from "./tolerant";
 import type { Fetcher, PlatformAdapter, RawListing } from "./types";
 
 const configSchema = z.object({
@@ -7,25 +8,28 @@ const configSchema = z.object({
   departmentIds: z.array(z.number()).optional(),
 });
 
+// Every optional field is .nullish() — Greenhouse returns explicit nulls
+// (e.g. "metadata": null on Figma/Stripe/Monzo/Wise boards).
 const jobSchema = z.object({
   id: z.number(),
   title: z.string(),
   absolute_url: z.string(),
-  content: z.string().optional().default(""),
-  location: z.object({ name: z.string() }).optional(),
-  updated_at: z.string().optional(),
-  metadata: z.array(z.object({ name: z.string(), value: z.unknown() })).optional(),
+  content: z.string().nullish(),
+  location: z.object({ name: z.string() }).nullish(),
+  updated_at: z.string().nullish(),
+  metadata: z.array(z.object({ name: z.string(), value: z.unknown() })).nullish(),
 });
 
-const responseSchema = z.object({ jobs: z.array(jobSchema) });
-export type GreenhousePayload = z.input<typeof responseSchema>;
+// Envelope only — individual jobs are validated one by one in toListings.
+const envelopeSchema = z.object({ jobs: z.array(z.unknown()) });
+export type GreenhousePayload = z.input<typeof envelopeSchema>;
 
 const API = "https://boards-api.greenhouse.io/v1/boards";
 
 async function get(fetcher: Fetcher, url: string) {
   const res = await fetcher(url);
   if (!res.ok) throw new Error(`greenhouse ${res.status} for ${url}`);
-  return responseSchema.parse(await res.json()).jobs;
+  return envelopeSchema.parse(await res.json()).jobs;
 }
 
 export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, GreenhousePayload> = {
@@ -43,40 +47,51 @@ export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, Greenhous
           )
         ).flat()
       : await get(fetcher, `${API}/${src.board}/jobs?content=true`);
-    const seen = new Set<number>();
-    const deduped = jobs.filter((j) => (seen.has(j.id) ? false : (seen.add(j.id), true)));
-    return this.toListings({ jobs: deduped }, src);
+    return this.toListings({ jobs }, src);
   },
   async probe(fetcher, board) {
+    let res: Response;
     try {
-      const res = await fetcher(`${API}/${board}/jobs`);
-      if (!res.ok) return { ok: false };
-      responseSchema.parse(await res.json());
-      let companyName: string | undefined;
-      try {
-        const meta = await fetcher(`${API}/${board}`);
-        if (meta.ok) {
-          const parsed = z.object({ name: z.string() }).safeParse(await meta.json());
-          companyName = parsed.success ? parsed.data.name : undefined;
-        }
-      } catch {
-        // meta is best-effort — the listings answer already proved the board
-      }
-      return { ok: true, companyName };
+      res = await fetcher(`${API}/${board}/jobs`);
     } catch {
       return { ok: false, networkError: true };
     }
+    if (!res.ok) return { ok: false };
+    try {
+      envelopeSchema.parse(await res.json());
+    } catch {
+      return { ok: false }; // answered, but not a Greenhouse payload
+    }
+    let companyName: string | undefined;
+    try {
+      const meta = await fetcher(`${API}/${board}`);
+      if (meta.ok) {
+        const parsed = z.object({ name: z.string() }).safeParse(await meta.json());
+        companyName = parsed.success ? parsed.data.name : undefined;
+      }
+    } catch {
+      // meta is best-effort — the listings answer already proved the board
+    }
+    return { ok: true, companyName };
   },
   toListings(payload, _src): RawListing[] {
-    const { jobs } = responseSchema.parse(payload);
-    return jobs.map((j) => ({
-      externalId: String(j.id),
-      title: j.title,
-      applyUrl: j.absolute_url,
-      locationRaw: j.location?.name ?? "",
-      descriptionHtml: decodeEntities(j.content),
-      postedAt: j.updated_at ? new Date(j.updated_at) : undefined,
-      updatedAt: j.updated_at ? new Date(j.updated_at) : undefined,
-    }));
+    const { jobs } = envelopeSchema.parse(payload);
+    const seen = new Set<string>();
+    const out: RawListing[] = [];
+    for (const j of parseJobList(jobs, jobSchema)) {
+      const externalId = String(j.id);
+      if (seen.has(externalId)) continue; // dedupe across departments
+      seen.add(externalId);
+      out.push({
+        externalId,
+        title: j.title,
+        applyUrl: j.absolute_url,
+        locationRaw: j.location?.name ?? "",
+        descriptionHtml: decodeEntities(j.content ?? ""),
+        postedAt: j.updated_at ? new Date(j.updated_at) : undefined,
+        updatedAt: j.updated_at ? new Date(j.updated_at) : undefined,
+      });
+    }
+    return out;
   },
 };

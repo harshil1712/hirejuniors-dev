@@ -10,7 +10,7 @@ import { PAGE_OPEN_QUESTION, type AiModels } from "./ai";
 import type { Browser } from "./browser";
 import { htmlToText } from "./html";
 
-/** Retire `expired`: valid_through passed, or posted/first-seen > 90 days. */
+/** Retire `expired`: valid_through passed. No age-based expiry (spec §Expiry). */
 export async function expireJobs(db: Db, now = new Date()): Promise<number> {
   const rows = await expirableJobs(db, now);
   if (rows.length === 0) return 0;
@@ -95,10 +95,10 @@ export async function linkCheckSlice(
           try {
             text = (await browser.markdown(row.applyUrl)).slice(0, 6000);
           } catch {
-            text = htmlToText(html).slice(0, 6000);
+            text = htmlToText(html, 6000);
           }
         } else {
-          text = htmlToText(html).slice(0, 6000);
+          text = htmlToText(html, 6000);
         }
         if (text.length < 200) {
           verdicts.push({ id: row.id }); // JS-rendered page — just stamp

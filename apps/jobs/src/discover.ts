@@ -146,6 +146,24 @@ async function createFound(
   return "found" as const;
 }
 
+const SLUG_SUFFIXES = ["hq", "app", "inc", "labs", "io", "jobs"] as const;
+
+/** Step-3 board guesses from a domain: the first label, then the label
+ * minus a company suffix when enough of it remains (hq.com → no variant —
+ * "hq" isn't longer than the suffix + 2). */
+export function slugGuesses(domain: string): string[] {
+  const label = domain.split(".")[0] ?? "";
+  const guesses = BOARD_RE.test(label) ? [label] : [];
+  for (const suffix of SLUG_SUFFIXES) {
+    if (label.endsWith(suffix) && label.length > suffix.length + 2) {
+      const guess = label.slice(0, -suffix.length);
+      if (BOARD_RE.test(guess) && !guesses.includes(guess)) guesses.push(guess);
+      break;
+    }
+  }
+  return guesses;
+}
+
 async function tryProbe(
   fetcher: Fetcher,
   platform: "greenhouse" | "lever" | "ashby",
@@ -266,11 +284,12 @@ export async function discoverStep(
       if (!res.networkError) anyRealAnswer = true;
     }
     if (!resolved && links.length === 0) {
-      // Step 3: slug guess = first label of the domain, probed in order.
-      // Runs whenever no link was found — pages may block bots while the
-      // ATS APIs still answer.
-      const guess = d.split(".")[0];
-      if (BOARD_RE.test(guess)) {
+      // Step 3: slug guesses from the first label of the domain — the label
+      // itself, then the label minus a company suffix (hq, app, inc, labs,
+      // io, jobs) when it's > suffix+2 chars (datadoghq → datadog). Runs
+      // whenever no link was found — pages may block bots while the ATS
+      // APIs still answer.
+      for (const guess of slugGuesses(d)) {
         for (const platform of ["greenhouse", "lever", "ashby"] as const) {
           const res = await tryProbe(fetcher, platform, guess);
           if (res.ok) {
@@ -279,6 +298,7 @@ export async function discoverStep(
           }
           if (!res.networkError) anyRealAnswer = true;
         }
+        if (resolved) break;
       }
     }
     if (!resolved && allFetchesFailed && !anyRealAnswer) outcome = "failed";

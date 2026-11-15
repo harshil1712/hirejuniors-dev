@@ -21,4 +21,10 @@ export function adapterFor(platform: SourceRow["platform"]): PlatformAdapter {
 
 export type { AdapterCtx, Fetcher, RawListing, SourceRow } from "./types";
 export { amazonJobs, ashby, careersPage, greenhouse, lever };
-export { extractMarkdownLinks, normaliseListingUrl, parseJobLinks } from "./careers-page";
+export {
+  cleanJobTitle,
+  extractMarkdownLinks,
+  normaliseListingUrl,
+  parseJobLinks,
+  stripFrontMatter,
+} from "./careers-page";

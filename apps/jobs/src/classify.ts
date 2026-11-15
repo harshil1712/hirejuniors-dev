@@ -163,17 +163,17 @@ async function decideJob(
   let inputTokens = res.inputTokens;
   let pLevel = choice(res.answers.level);
   let pTech = noul(res.answers.is_tech);
-  let accepted =
-    pLevel !== null && pTech !== null && pLevel.p >= 0.8 && (pTech >= 0.8 || pTech <= 0.2);
+  // Spec §Classification step 3 — the same 4 ordered rules evaluated with
+  // per-model thresholds; the first rule that fires decides.
+  let rule = evalDecision(pLevel, pTech, 0.8, 0.8, 0.2);
 
-  if (!accepted) {
+  if (rule.outcome === "undecided") {
     model = "clef";
     res = await ai.decide(model, state, DECIDE_QUESTIONS);
     inputTokens += res.inputTokens;
     pLevel = choice(res.answers.level);
     pTech = noul(res.answers.is_tech);
-    accepted =
-      pLevel !== null && pTech !== null && pLevel.p >= 0.7 && (pTech >= 0.7 || pTech <= 0.3);
+    rule = evalDecision(pLevel, pTech, 0.7, 0.7, 0.3);
   }
 
   const set: Partial<typeof job.$inferInsert> = {
@@ -197,7 +197,7 @@ async function decideJob(
     set.workplace = wp.choice as "onsite" | "hybrid" | "remote";
   }
 
-  if (!accepted) {
+  if (rule.outcome === "undecided") {
     const guess = pLevel?.choice && pLevel.choice !== "not_early_career" ? pLevel.choice : null;
     set.status = "review";
     set.level = (guess as Level | null) ?? null;
@@ -205,18 +205,51 @@ async function decideJob(
     return { outcome: "review", set, salaryHints, inputTokens };
   }
 
-  set.classifierConfidence = Math.min(pLevel!.p, Math.max(pTech!, 1 - pTech!));
-  if (pLevel!.choice === "not_early_career") {
+  // classifier_confidence = the probability of the rule that fired.
+  set.classifierConfidence = rule.confidence;
+  if (rule.outcome === "rejected") {
     set.status = "rejected";
-    set.rejectReason = "not_early_career";
-    return { outcome: "rejected", set, salaryHints, inputTokens };
-  }
-  if (pTech! < 0.5) {
-    set.status = "rejected";
-    set.rejectReason = "not_tech";
+    set.rejectReason = rule.rejectReason;
     return { outcome: "rejected", set, salaryHints, inputTokens };
   }
   set.status = "active";
-  set.level = pLevel!.choice as Level;
+  set.level = rule.level;
   return { outcome: "active", set, salaryHints, inputTokens };
+}
+
+type Decision =
+  | { outcome: "rejected"; rejectReason: "not_early_career" | "not_tech"; confidence: number }
+  | { outcome: "active"; level: Level; confidence: number }
+  | { outcome: "undecided" };
+
+/** The 4 ordered spec rules. Rule 1 (confident not_early_career) fires
+ * before tech; rule 2 (confident not-tech) before a level check; rule 3
+ * needs confident level AND tech. */
+function evalDecision(
+  pLevel: { choice: string; p: number } | null,
+  pTech: number | null,
+  T: number,
+  techHigh: number,
+  techLow: number,
+): Decision {
+  if (pLevel && pLevel.choice === "not_early_career" && pLevel.p >= T) {
+    return { outcome: "rejected", rejectReason: "not_early_career", confidence: pLevel.p };
+  }
+  if (pTech !== null && pTech <= techLow) {
+    return { outcome: "rejected", rejectReason: "not_tech", confidence: 1 - pTech };
+  }
+  if (
+    pLevel &&
+    pLevel.choice !== "not_early_career" &&
+    pLevel.p >= T &&
+    pTech !== null &&
+    pTech >= techHigh
+  ) {
+    return {
+      outcome: "active",
+      level: pLevel.choice as Level,
+      confidence: Math.min(pLevel.p, pTech),
+    };
+  }
+  return { outcome: "undecided" };
 }

@@ -305,3 +305,27 @@ describe("manual flow — URL order and outcomes", () => {
     expect(manual.attempts).toBe(1); // probed first despite being newer
   });
 });
+
+describe("slugGuesses (spec §Discovery step 3)", () => {
+  it("label itself, then suffix-stripped variant", async () => {
+    const { slugGuesses } = await import("../src/discover");
+    expect(slugGuesses("datadoghq.com")).toEqual(["datadoghq", "datadog"]);
+    expect(slugGuesses("acmeinc.com")).toEqual(["acmeinc", "acme"]);
+    expect(slugGuesses("stripe.com")).toEqual(["stripe"]);
+    expect(slugGuesses("hq.com")).toEqual(["hq"]); // no empty/short guess
+    expect(slugGuesses("myapp.io")).toEqual(["myapp"]); // "my" too short (needs > suffix+2)
+  });
+
+  it("suffix variant found via probe: datadoghq → datadog", async () => {
+    await cand("dsc_sg1", "datadoghq.dev");
+    const f = fetcher({
+      "datadoghq.dev": "error",
+      "boards-api.greenhouse.io/v1/boards/datadog/jobs": greenhouseOk(),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_sg1");
+    expect(c.status).toBe("found");
+    expect(c.board).toBe("datadog");
+    expect(c.platform).toBe("greenhouse");
+  });
+});

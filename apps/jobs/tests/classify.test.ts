@@ -213,3 +213,101 @@ describe("classifyStep", () => {
     expect((await getJob(id3)).workplace).toBe("remote");
   });
 });
+
+describe("decision rules (spec §Classification step 3)", () => {
+  it("flash not_early_career p=0.85 with tech 0.5 → rejected, no clef call", async () => {
+    await insertJob({ id: "job_r1" });
+    const { models, calls } = ai(() => decideResult(accepted("not_early_career", 0.85, 0.5)));
+    const counts = await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash"]);
+    expect(counts.rejected).toBe(1);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r1"));
+    expect(j.status).toBe("rejected");
+    expect(j.rejectReason).toBe("not_early_career");
+    expect(j.classifiedBy).toBe("clef-flash");
+    expect(j.classifierConfidence).toBeCloseTo(0.85);
+  });
+
+  it("flash tech 0.1 with level p=0.4 → rejected not_tech, no clef call", async () => {
+    await insertJob({ id: "job_r2" });
+    const { models, calls } = ai(() => decideResult(accepted("junior", 0.4, 0.1)));
+    await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash"]);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r2"));
+    expect(j.status).toBe("rejected");
+    expect(j.rejectReason).toBe("not_tech");
+    expect(j.classifierConfidence).toBeCloseTo(0.9);
+  });
+
+  it("flash undecided → clef rule 3 decides", async () => {
+    await insertJob({ id: "job_r3" });
+    const { models, calls } = ai((m) =>
+      decideResult(
+        m === "clef-flash" ? accepted("junior", 0.75, 0.5) : accepted("graduate", 0.8, 0.75),
+      ),
+    );
+    await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash", "clef"]);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r3"));
+    expect(j.status).toBe("active");
+    expect(j.level).toBe("graduate");
+    expect(j.classifiedBy).toBe("clef");
+    expect(j.classifierConfidence).toBeCloseTo(0.75);
+  });
+
+  it("flash undecided → clef rule 1 rejects", async () => {
+    await insertJob({ id: "job_r4" });
+    const { models, calls } = ai((m) =>
+      decideResult(
+        m === "clef-flash" ? accepted("junior", 0.5, 0.5) : accepted("not_early_career", 0.72, 0.4),
+      ),
+    );
+    await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash", "clef"]);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r4"));
+    expect(j.status).toBe("rejected");
+    expect(j.rejectReason).toBe("not_early_career");
+    expect(j.classifiedBy).toBe("clef");
+  });
+
+  it("flash undecided → clef rule 2 rejects", async () => {
+    await insertJob({ id: "job_r5" });
+    const { models, calls } = ai((m) =>
+      decideResult(
+        m === "clef-flash" ? accepted("junior", 0.6, 0.5) : accepted("junior", 0.5, 0.2),
+      ),
+    );
+    await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash", "clef"]);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r5"));
+    expect(j.status).toBe("rejected");
+    expect(j.rejectReason).toBe("not_tech");
+    expect(j.classifierConfidence).toBeCloseTo(0.8);
+  });
+
+  it("clef undecided → review, null confidence, classified_by clef", async () => {
+    await insertJob({ id: "job_r6" });
+    const { models, calls } = ai(() => decideResult(accepted("junior", 0.5, 0.5)));
+    await classifyStep(db(), models);
+    expect(calls).toEqual(["clef-flash", "clef"]);
+    const [j] = await db().select().from(job).where(eq(job.id, "job_r6"));
+    expect(j.status).toBe("review");
+    expect(j.classifiedBy).toBe("clef");
+    expect(j.classifierConfidence).toBeNull();
+  });
+});
+
+describe("buildState — 6000-char body (spec §Classification state)", () => {
+  it("includes description text beyond char 500", async () => {
+    const { buildState } = await import("../src/ai");
+    const deep = "<p>intro</p><p>" + "y".repeat(900) + "DEEP-MARKER</p>";
+    const state = buildState({
+      title: "T",
+      companyName: "C",
+      locationRaw: "L",
+      employmentType: null,
+      descriptionHtml: deep,
+    });
+    expect(state).toContain("DEEP-MARKER");
+  });
+});

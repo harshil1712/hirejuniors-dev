@@ -264,3 +264,116 @@ describe("no_junior_roles retry (ingestibleSources)", () => {
     expect(s.disabledReason).toBe("no_junior_roles");
   });
 });
+
+describe("feed diff thresholds (spec §Feed diff)", () => {
+  it("careers_page misses need 2 runs to retire", async () => {
+    const src = await seedSource({
+      id: "src_diff_cp",
+      companyId: "cmp_ing01",
+      board: "https://c.example/jobs",
+      platform: "careers_page",
+      config: '{"listingUrl":"https://c.example/jobs"}',
+    });
+    await upsertListings(db(), src, "ingco", [
+      listing({ externalId: "keep-cp" }),
+      listing({ externalId: "gone-cp" }),
+    ]);
+    await db().update(job).set({ status: "active" }).where(eq(job.externalId, "gone-cp"));
+
+    // miss 1 → counted, still active
+    let counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "keep-cp" })]);
+    expect(counts.retired).toBe(0);
+    let [j] = (await jobsFor("src_diff_cp")).filter((r) => r.externalId === "gone-cp");
+    expect(j.status).toBe("active");
+    expect(j.missedRuns).toBe(1);
+
+    // miss 2 → retired
+    counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "keep-cp" })]);
+    expect(counts.retired).toBe(1);
+    [j] = (await jobsFor("src_diff_cp")).filter((r) => r.externalId === "gone-cp");
+    expect(j.status).toBe("retired");
+    expect(j.retireReason).toBe("missing_from_feed");
+  });
+
+  it("JSON platform still retires at miss 1 (threshold unchanged)", async () => {
+    const src = await seedSource({ id: "src_diff_lv", companyId: "cmp_ing01", board: "diff-lv" });
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "gone-lv" })]);
+    await db().update(job).set({ status: "active" }).where(eq(job.externalId, "gone-lv"));
+    const counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "other" })]);
+    expect(counts.retired).toBe(1);
+  });
+});
+
+describe("expired reactivation gate (spec §Expiry)", () => {
+  it("expired + past valid_through reappears → stays retired", async () => {
+    const src = await seedSource({ id: "src_exp01", companyId: "cmp_ing01", board: "exp1" });
+    const l = listing({ externalId: "exp-gone" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({
+        status: "retired",
+        retireReason: "expired",
+        retiredAt: new Date(),
+        validThrough: new Date(Date.now() - 24 * 3600 * 1000),
+      })
+      .where(eq(job.externalId, "exp-gone"));
+    const counts = await upsertListings(db(), src, "ingco", [l]);
+    expect(counts.reactivated).toBe(0);
+    const [j] = await jobsFor("src_exp01");
+    expect(j.status).toBe("retired");
+    expect(j.retireReason).toBe("expired");
+    expect(j.missedRuns).toBe(0); // sighting stamped, not counted missing
+  });
+
+  it("expired + future valid_through reappears → reactivated", async () => {
+    const src = await seedSource({ id: "src_exp02", companyId: "cmp_ing01", board: "exp2" });
+    const l = listing({ externalId: "exp-back" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({
+        status: "retired",
+        retireReason: "expired",
+        retiredAt: new Date(),
+        validThrough: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      })
+      .where(eq(job.externalId, "exp-back"));
+    const counts = await upsertListings(db(), src, "ingco", [l]);
+    expect(counts.reactivated).toBe(1);
+    const [j] = await jobsFor("src_exp02");
+    expect(j.status).toBe("pending");
+  });
+
+  it("expired + null valid_through reappears → reactivated", async () => {
+    const src = await seedSource({ id: "src_exp03", companyId: "cmp_ing01", board: "exp3" });
+    const l = listing({ externalId: "exp-null" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({
+        status: "retired",
+        retireReason: "expired",
+        retiredAt: new Date(),
+        validThrough: null,
+      })
+      .where(eq(job.externalId, "exp-null"));
+    const counts = await upsertListings(db(), src, "ingco", [l]);
+    expect(counts.reactivated).toBe(1);
+  });
+});
+
+describe("content hash — full text, no cap", () => {
+  it("hash changes when only text past char 500 changes", async () => {
+    const { contentHash } = await import("../src/ingest");
+    const head = "<p>same intro</p>";
+    const tail = "<p>" + "x".repeat(700) + "TAIL-A</p>";
+    const a = await contentHash({ title: "t", locationRaw: "l", descriptionHtml: head + tail });
+    const b = await contentHash({
+      title: "t",
+      locationRaw: "l",
+      descriptionHtml: head + tail.replace("TAIL-A", "TAIL-B"),
+    });
+    expect(a).not.toBe(b);
+  });
+});

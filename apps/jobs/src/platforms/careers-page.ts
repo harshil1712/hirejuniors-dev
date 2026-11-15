@@ -2,13 +2,33 @@
 // listing URL; config = {"listingUrl": string}. Needs browser + ai in ctx.
 import { z } from "zod";
 import { CAREERS_PAGE_FIELDS, JOB_LINK_STATE_PREFIX, jobLinkQuestion } from "../ai";
-import { markdownToHtml } from "../html";
+import { decodeEntities, markdownToHtml } from "../html";
 import type { AdapterCtx, PlatformAdapter, RawListing, SourceRow } from "./types";
 
 const configSchema = z.object({ listingUrl: z.string() });
 
 /** Boundary parse for a Clairic answer (spec §Careers ingest fields). */
 const textAnswer = z.object({ value: z.string().nullable(), confidence: z.number() });
+
+const HEADING_RE = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i;
+
+/** Link-text → job title (spec §Careers-page ingest): an HTML heading wins;
+ * otherwise the text before the first tag or line break. Remaining tags are
+ * stripped, entities decoded, whitespace collapsed. */
+export function cleanJobTitle(text: string): string {
+  const m = text.match(HEADING_RE);
+  const head = m ? m[1] : (text.split(/<[^\s>]|[\r\n]/)[0] ?? text);
+  return decodeEntities(head.replace(/<[^>]*>/g, ""))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Browser Run markdown may start with a YAML front-matter block — strip it
+ * before html conversion and before Clairic (spec §Careers-page ingest). */
+export function stripFrontMatter(md: string): string {
+  const m = md.match(/^\s*---\s*\r?\n[\s\S]*?\r?\n---\s*(\r?\n|$)/);
+  return m ? md.slice(m[0].length) : md;
+}
 
 const MAX_LINKS = 200;
 const BATCH = 60;
@@ -162,7 +182,7 @@ export const careersPage: PlatformAdapter<z.infer<typeof configSchema>, RawListi
     let newPages = 0;
     for (const l of links) {
       const externalId = normaliseJobUrl(l.url);
-      const title = l.text.replace(/\s+/g, " ").trim();
+      const title = cleanJobTitle(l.text);
       if (known.has(externalId)) {
         // Existing link — re-seen only, no page fetch; upsert keeps the
         // stored fields (reSeen).
@@ -171,11 +191,10 @@ export const careersPage: PlatformAdapter<z.infer<typeof configSchema>, RawListi
       }
       if (newPages >= MAX_NEW_PAGES) continue; // deferred — excluded from feed
       newPages++;
-      const md = await browser.markdown(l.url);
+      const md = stripFrontMatter(await browser.markdown(l.url));
       const res = await ai.extract(md, CAREERS_PAGE_FIELDS, today());
       if (ctx.aiTokens) ctx.aiTokens.n += res.inputTokens;
       const loc = textAnswer.safeParse(res.answers.location);
-      const posted = textAnswer.safeParse(res.answers.posted_date);
       out.push({
         externalId,
         title,
@@ -183,10 +202,7 @@ export const careersPage: PlatformAdapter<z.infer<typeof configSchema>, RawListi
         locationRaw:
           loc.success && loc.data.confidence >= CONFIDENCE && loc.data.value ? loc.data.value : "",
         descriptionHtml: markdownToHtml(md),
-        postedAt:
-          posted.success && posted.data.confidence >= CONFIDENCE && posted.data.value
-            ? new Date(posted.data.value)
-            : undefined,
+        // postedAt stays null — first_seen_at stands in (spec §Careers ingest).
       });
     }
     return out;

@@ -26,21 +26,12 @@ export function sourceWithCompany(db: Db, sourceId: string) {
     .then((r) => r[0]);
 }
 
-/** Active jobs that lapsed: explicit deadline passed or > 90 days old. */
+/** Active jobs whose explicit deadline (valid_through) has passed. */
 export function expirableJobs(db: Db, now: Date) {
-  const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
   return db
     .select({ id: job.id })
     .from(job)
-    .where(
-      and(
-        eq(job.status, "active"),
-        or(
-          lt(job.validThrough, now),
-          lt(sql`coalesce(${job.postedAt}, ${job.firstSeenAt})`, cutoff.getTime()),
-        ),
-      ),
-    );
+    .where(and(eq(job.status, "active"), lt(job.validThrough, now)));
 }
 
 /**

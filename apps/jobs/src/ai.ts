@@ -96,7 +96,7 @@ export function buildState(input: {
   employmentType: string | null;
   descriptionHtml: string | null;
 }): string {
-  const body = htmlToText(input.descriptionHtml ?? "").slice(0, 6000);
+  const body = htmlToText(input.descriptionHtml ?? "", 6000);
   return [
     `Title: ${input.title}`,
     `Company: ${input.companyName}`,
@@ -237,9 +237,5 @@ export const CAREERS_PAGE_FIELDS = {
   location: {
     type: "text",
     instructions: "Where the job is based, as written on the page",
-  },
-  posted_date: {
-    type: "date",
-    instructions: "Date the job was posted",
   },
 } as const satisfies ExtractFields;

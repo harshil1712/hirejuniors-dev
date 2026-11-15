@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { decodeEntities } from "../html";
 import { normalizeEmploymentType, normalizeWorkplace } from "./normalize";
+import { parseJobList } from "./tolerant";
 import type { PlatformAdapter, RawListing } from "./types";
 
 const configSchema = z.object({}).strict();
@@ -10,25 +11,28 @@ const locationField = z.union([
   z.object({ locationName: z.string() }).transform((o) => o.locationName),
 ]);
 
+// Every optional field is .nullish() — Ashby returns explicit nulls
+// (e.g. isRemote/workplaceType on Notion's board) which are treated as absent.
 const jobSchema = z.object({
   id: z.string(),
   title: z.string(),
-  jobUrl: z.string().optional(),
-  applyUrl: z.string().optional(),
-  location: locationField.optional(),
-  employmentType: z.string().optional(),
-  isRemote: z.boolean().optional(),
-  workplaceType: z.string().optional(),
+  jobUrl: z.string().nullish(),
+  applyUrl: z.string().nullish(),
+  location: locationField.nullish(),
+  employmentType: z.string().nullish(),
+  isRemote: z.boolean().nullish(),
+  workplaceType: z.string().nullish(),
   address: z
-    .object({ postalAddress: z.object({ addressCountry: z.string().optional() }).optional() })
-    .optional(),
-  publishedAt: z.string().optional(),
-  descriptionHtml: z.string().optional(),
-  descriptionPlain: z.string().optional(),
+    .object({ postalAddress: z.object({ addressCountry: z.string().nullish() }).nullish() })
+    .nullish(),
+  publishedAt: z.string().nullish(),
+  descriptionHtml: z.string().nullish(),
+  descriptionPlain: z.string().nullish(),
 });
 
-const responseSchema = z.object({ jobs: z.array(jobSchema) });
-export type AshbyPayload = z.input<typeof responseSchema>;
+// Envelope only — individual jobs are validated one by one in toListings.
+const envelopeSchema = z.object({ jobs: z.array(z.unknown()) });
+export type AshbyPayload = z.input<typeof envelopeSchema>;
 
 export const ashby: PlatformAdapter<z.infer<typeof configSchema>, AshbyPayload> = {
   configSchema,
@@ -41,25 +45,30 @@ export const ashby: PlatformAdapter<z.infer<typeof configSchema>, AshbyPayload> 
     return this.toListings(await res.json(), src);
   },
   async probe(fetcher, board) {
+    let res: Response;
     try {
-      const res = await fetcher(`https://api.ashbyhq.com/posting-api/job-board/${board}`);
-      if (!res.ok) return { ok: false };
-      z.object({ jobs: z.array(z.object({ id: z.string() })) }).parse(await res.json());
-      return { ok: true };
+      res = await fetcher(`https://api.ashbyhq.com/posting-api/job-board/${board}`);
     } catch {
       return { ok: false, networkError: true };
     }
+    if (!res.ok) return { ok: false };
+    try {
+      envelopeSchema.parse(await res.json());
+    } catch {
+      return { ok: false }; // answered, but not an Ashby payload — a real answer
+    }
+    return { ok: true };
   },
   toListings(payload, _src): RawListing[] {
-    const { jobs } = responseSchema.parse(payload);
-    return jobs.map((j) => ({
+    const { jobs } = envelopeSchema.parse(payload);
+    return parseJobList(jobs, jobSchema).map((j) => ({
       externalId: j.id,
       title: j.title,
       applyUrl: j.jobUrl ?? j.applyUrl ?? "",
       locationRaw: j.location ?? "",
-      employmentTypeHint: normalizeEmploymentType(j.employmentType),
-      workplaceHint: j.isRemote ? "remote" : normalizeWorkplace(j.workplaceType),
-      countryHint: j.address?.postalAddress?.addressCountry,
+      employmentTypeHint: normalizeEmploymentType(j.employmentType ?? undefined),
+      workplaceHint: j.isRemote ? "remote" : normalizeWorkplace(j.workplaceType ?? undefined),
+      countryHint: j.address?.postalAddress?.addressCountry ?? undefined,
       descriptionHtml: decodeEntities(j.descriptionHtml ?? j.descriptionPlain ?? ""),
       postedAt: j.publishedAt ? new Date(j.publishedAt) : undefined,
     }));
