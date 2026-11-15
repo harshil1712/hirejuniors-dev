@@ -57,8 +57,9 @@ export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, Greenhous
       return { ok: false, networkError: true };
     }
     if (!res.ok) return { ok: false };
+    let jobs: unknown[];
     try {
-      envelopeSchema.parse(await res.json());
+      jobs = envelopeSchema.parse(await res.json()).jobs;
     } catch {
       return { ok: false }; // answered, but not a Greenhouse payload
     }
@@ -72,7 +73,7 @@ export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, Greenhous
     } catch {
       // meta is best-effort — the listings answer already proved the board
     }
-    return { ok: true, companyName };
+    return { ok: true, companyName, jobCount: jobs.length };
   },
   toListings(payload, _src): RawListing[] {
     const { jobs } = envelopeSchema.parse(payload);

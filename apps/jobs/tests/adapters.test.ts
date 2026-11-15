@@ -159,14 +159,14 @@ describe("tolerant parsing (spec §Adapters)", () => {
         status: 200,
         headers: { "content-type": "application/json" },
       })) as typeof fetch;
-    expect(await ashby.probe!(fetcher, "board")).toEqual({ ok: true });
-    expect(await greenhouse.probe!(fetcher, "board")).toEqual({ ok: true, companyName: undefined });
+    expect(await ashby.probe!(fetcher, "board")).toEqual({ ok: true, jobCount: 1 });
+    expect(await greenhouse.probe!(fetcher, "board")).toEqual({ ok: true, jobCount: 1, companyName: undefined });
     // Lever's envelope is a bare array — invalid jobs still mean ok.
     const leverFetcher = (async () =>
       new Response(JSON.stringify([{ totally: "wrong" }]), {
         status: 200,
         headers: { "content-type": "application/json" },
       })) as typeof fetch;
-    expect(await lever.probe!(leverFetcher, "board")).toEqual({ ok: true });
+    expect(await lever.probe!(leverFetcher, "board")).toEqual({ ok: true, jobCount: 1 });
   });
 });

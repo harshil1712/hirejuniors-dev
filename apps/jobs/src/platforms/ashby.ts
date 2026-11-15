@@ -52,12 +52,13 @@ export const ashby: PlatformAdapter<z.infer<typeof configSchema>, AshbyPayload> 
       return { ok: false, networkError: true };
     }
     if (!res.ok) return { ok: false };
+    let jobs: unknown[];
     try {
-      envelopeSchema.parse(await res.json());
+      jobs = envelopeSchema.parse(await res.json()).jobs;
     } catch {
       return { ok: false }; // answered, but not an Ashby payload — a real answer
     }
-    return { ok: true };
+    return { ok: true, jobCount: jobs.length };
   },
   toListings(payload, _src): RawListing[] {
     const { jobs } = envelopeSchema.parse(payload);

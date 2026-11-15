@@ -164,6 +164,15 @@ export function slugGuesses(domain: string): string[] {
   return guesses;
 }
 
+/** Board-name plausibility for slug guesses (spec §Discovery step 3):
+ * lower-case, keep a-z0-9 only, drop a trailing inc/ltd/careers/jobs. */
+function normaliseBoardName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .replace(/(inc|ltd|careers|jobs)$/, "");
+}
+
 async function tryProbe(
   fetcher: Fetcher,
   platform: "greenhouse" | "lever" | "ashby",
@@ -286,20 +295,35 @@ export async function discoverStep(
     if (!resolved && links.length === 0) {
       // Step 3: slug guesses from the first label of the domain — the label
       // itself, then the label minus a company suffix (hq, app, inc, labs,
-      // io, jobs) when it's > suffix+2 chars (datadoghq → datadog). Runs
-      // whenever no link was found — pages may block bots while the ATS
-      // APIs still answer.
+      // io, jobs) when it's > suffix+2 chars (datadoghq → datadog). Probe
+      // all three platforms for every guess and keep only plausible
+      // matches: jobCount ≥ 1, and a Greenhouse board whose known name
+      // doesn't normalise-equal the guess is discarded (spec §Discovery).
+      // The plausible match with the most jobs wins.
+      let best: {
+        platform: "greenhouse" | "lever" | "ashby";
+        board: string;
+        name?: string;
+        jobCount: number;
+      } | null = null;
       for (const guess of slugGuesses(d)) {
         for (const platform of ["greenhouse", "lever", "ashby"] as const) {
           const res = await tryProbe(fetcher, platform, guess);
-          if (res.ok) {
-            resolved = { platform, board: guess, name: res.companyName };
-            break;
+          if (res.ok || res.networkError !== true) anyRealAnswer = true;
+          if (!res.ok || res.jobCount < 1) continue;
+          if (
+            platform === "greenhouse" &&
+            res.companyName &&
+            normaliseBoardName(res.companyName) !== normaliseBoardName(guess)
+          ) {
+            continue; // same-name collision on another company's board
           }
-          if (!res.networkError) anyRealAnswer = true;
+          if (!best || res.jobCount > best.jobCount) {
+            best = { platform, board: guess, name: res.companyName, jobCount: res.jobCount };
+          }
         }
-        if (resolved) break;
       }
+      if (best) resolved = { platform: best.platform, board: best.board, name: best.name };
     }
     if (!resolved && allFetchesFailed && !anyRealAnswer) outcome = "failed";
 

@@ -329,3 +329,92 @@ describe("slugGuesses (spec §Discovery step 3)", () => {
     expect(c.platform).toBe("greenhouse");
   });
 });
+
+describe("slug-guess plausibility (spec §Discovery step 3)", () => {
+  const ghJobs = (n: number) =>
+    new Response(
+      JSON.stringify({
+        jobs: Array.from({ length: n }, (_, i) => ({ id: i + 1, title: "t", absolute_url: "x" })),
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  const ghMeta = (name: string) =>
+    new Response(JSON.stringify({ name }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  const ashbyJobs = (n: number) =>
+    new Response(JSON.stringify({ jobs: Array.from({ length: n }, (_, i) => ({ id: `j${i}` })) }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("wise.com: Greenhouse 'Wise Worksite Field Sales' ≠ 'wise' → not_found", async () => {
+    await cand("dsc_p1", "wise.dev");
+    const f = fetcher({
+      "wise.dev": "error",
+      "boards-api.greenhouse.io/v1/boards/wise/jobs": ghJobs(19),
+      "boards-api.greenhouse.io/v1/boards/wise": ghMeta("Wise Worksite Field Sales"),
+    });
+    await discoverStep(db(), { fetcher: f });
+    expect((await getCand("dsc_p1")).status).toBe("not_found");
+  });
+
+  it("ramp.com: Greenhouse 'RAMP' 1 job + Ashby 180 → ashby wins on jobCount", async () => {
+    await cand("dsc_p2", "ramp.dev");
+    const f = fetcher({
+      "ramp.dev": "error",
+      "boards-api.greenhouse.io/v1/boards/ramp/jobs": ghJobs(1),
+      "boards-api.greenhouse.io/v1/boards/ramp": ghMeta("RAMP"),
+      "api.ashbyhq.com/posting-api/job-board/ramp": ashbyJobs(180),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_p2");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("ashby");
+    expect(c.board).toBe("ramp");
+  });
+
+  it("stripe.com: Greenhouse 'Stripe' 786 jobs → found greenhouse", async () => {
+    await cand("dsc_p3", "stripe.dev");
+    const f = fetcher({
+      "stripe.dev": "error",
+      "boards-api.greenhouse.io/v1/boards/stripe/jobs": ghJobs(786),
+      "boards-api.greenhouse.io/v1/boards/stripe": ghMeta("Stripe"),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_p3");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("greenhouse");
+    expect(c.board).toBe("stripe");
+  });
+
+  it("board with 0 jobs is discarded", async () => {
+    await cand("dsc_p4", "emptyco.dev");
+    const f = fetcher({
+      "emptyco.dev": "error",
+      "boards-api.greenhouse.io/v1/boards/emptyco/jobs": ghJobs(0),
+      "api.lever.co/v0/postings/emptyco": leverOk(),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_p4");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("lever");
+  });
+
+  it("page link to a board with a different name is still accepted", async () => {
+    await cand("dsc_p5", "linkco.dev");
+    const f = fetcher({
+      "linkco.dev/careers": new Response(
+        '<a href="https://boards.greenhouse.io/acmeats">jobs</a>',
+        { headers: { "content-type": "text/html" } },
+      ),
+      "boards-api.greenhouse.io/v1/boards/acmeats/jobs": ghJobs(3),
+      "boards-api.greenhouse.io/v1/boards/acmeats": ghMeta("Different Name Ltd"),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_p5");
+    expect(c.status).toBe("found");
+    expect(c.board).toBe("acmeats");
+  });
+});

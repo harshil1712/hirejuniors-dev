@@ -27,7 +27,7 @@ const RETRY: WorkflowStepConfig = {
 const INGEST_STEP: WorkflowStepConfig = { ...RETRY, timeout: "10 minutes" };
 const LINK_CHECK_JOBS = 400;
 const LINK_CHECK_BATCH = 40;
-const CLASSIFY_STEPS = 25;
+const CLASSIFY_STEPS = 50;
 const CLASSIFY_BATCH = 20;
 const DISCOVER_STEPS = 10; // ≤150 candidates per run
 

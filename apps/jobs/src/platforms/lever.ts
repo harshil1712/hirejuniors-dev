@@ -50,12 +50,13 @@ export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> 
       return { ok: false, networkError: true };
     }
     if (!res.ok) return { ok: false };
+    let jobs: unknown[];
     try {
-      z.array(z.unknown()).parse(await res.json());
+      jobs = z.array(z.unknown()).parse(await res.json());
     } catch {
       return { ok: false }; // answered, but not a Lever payload
     }
-    return { ok: true };
+    return { ok: true, jobCount: jobs.length };
   },
   toListings(payload, _src): RawListing[] {
     const postings = parseJobList(envelopeSchema.parse(payload), postingSchema);

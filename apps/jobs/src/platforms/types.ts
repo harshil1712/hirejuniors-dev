@@ -53,5 +53,7 @@ export interface PlatformAdapter<C = unknown, Payload = unknown> {
   probe?(
     fetcher: Fetcher,
     board: string,
-  ): Promise<{ ok: true; companyName?: string } | { ok: false; networkError?: boolean }>;
+  ): Promise<
+    { ok: true; companyName?: string; jobCount: number } | { ok: false; networkError?: boolean }
+  >;
 }
