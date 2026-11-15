@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
-import type { ZodError, ZodType } from "zod";
 import { ServiceError } from "../services/errors";
 
 export interface ErrorDetail {
@@ -22,12 +21,6 @@ export function errorJson(
   const error = { code, message, requestId: c.get("requestId"), details };
   return c.json({ error }, status);
 }
-
-/** `{"application/json": { schema }}` for createRoute request/response
- * content declarations. */
-export const json = <T extends ZodType>(schema: T) => ({
-  "application/json": { schema },
-});
 
 /**
  * Shared router `onError`: ServiceError → its envelope status; anything else
@@ -59,10 +52,13 @@ export function onApiError(err: Error, c: Context) {
 }
 
 /**
- * Shared OpenAPIHono `defaultHook`: zod failures become the 400
+ * Shared `@hono/zod-validator` hook: zod failures become the 400
  * `validation_failed` envelope, `details[].path` joined by ".".
  */
-export const validationHook = (result: { success: boolean; error?: ZodError }, c: Context) => {
+export const validationHook = (
+  result: { success: boolean; error?: { issues: { path: PropertyKey[]; message: string }[] } },
+  c: Context,
+) => {
   if (result.success || !result.error) return;
   return errorJson(
     c,

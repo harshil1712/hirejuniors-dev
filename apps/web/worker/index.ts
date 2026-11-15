@@ -1,23 +1,18 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { SPA_CSP } from "./security-headers";
-import { requestIdMiddleware } from "./middleware/request-id";
+import { requestId } from "hono/request-id";
 import { authRateLimit } from "./middleware/rate-limit";
 import { createAuth } from "./auth";
 import { publicConfigRoutes } from "./routes/public-config";
 import { meRoutes } from "./routes/me";
 import { sessionPrincipal } from "./middleware/principal";
-import { jobsApi } from "./api/jobs";
-import { companiesApi } from "./api/companies";
-import { sourcesApi } from "./api/sources";
-import { runsApi } from "./api/runs";
-import { discoveryApi } from "./api/discovery";
-import { dashboardApi } from "./api/dashboard";
+import { api, type ApiRoutes } from "./api";
 
 const app = new Hono<{ Bindings: Env }>();
 
 // Request id first — the error handler and every route can read it.
-app.use("*", requestIdMiddleware);
+app.use("*", requestId());
 
 // Security headers on every response.
 app.use(
@@ -63,12 +58,7 @@ for (const name of ["jobs", "companies", "sources", "runs", "dashboard", "discov
   app.use(`/api/${name}`, sessionPrincipal);
   app.use(`/api/${name}/*`, sessionPrincipal);
 }
-app.route("/api", jobsApi);
-app.route("/api", companiesApi);
-app.route("/api", sourcesApi);
-app.route("/api", runsApi);
-app.route("/api", discoveryApi);
-app.route("/api", dashboardApi);
+app.route("/api", api);
 
 // Better Auth handler — catches all /api/auth/* requests (sign-in, sign-up,
 // email verification, reset, admin plugin endpoints, OAuth callbacks).
@@ -85,4 +75,5 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 
 app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
+export type { ApiRoutes };
 export default app;

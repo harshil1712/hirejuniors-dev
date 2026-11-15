@@ -1,17 +1,12 @@
 import { and, count, desc, eq, gt, lt, or } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { company, ingestRun, job, source, sourceRun } from "../../schema/db";
-import type {
-  DashboardSummary,
-  IngestRun,
-  RunListQuery,
-  SourceRun as SourceRunDto,
-} from "../api/schemas";
+import type { RunListQuery } from "../api/schemas";
 import { ServiceError } from "./errors";
 
 type Db = DrizzleD1Database;
 
-function toApi(row: typeof ingestRun.$inferSelect): IngestRun {
+function toApi(row: typeof ingestRun.$inferSelect) {
   return {
     id: row.id,
     trigger: row.trigger,
@@ -54,7 +49,7 @@ function encodeCursor(startedAt: Date, id: string): string {
 export async function list(
   db: Db,
   query: RunListQuery,
-): Promise<{ items: IngestRun[]; nextCursor: string | null }> {
+): Promise<{ items: ReturnType<typeof toApi>[]; nextCursor: string | null }> {
   const conditions = [];
   if (query.cursor !== undefined) {
     const { startedAt, id } = decodeCursor(query.cursor);
@@ -80,7 +75,7 @@ export async function list(
   return { items: items.map(toApi), nextCursor };
 }
 
-export async function get(db: Db, id: string): Promise<IngestRun & { sourceRuns: SourceRunDto[] }> {
+export async function get(db: Db, id: string) {
   const row = await db.select().from(ingestRun).where(eq(ingestRun.id, id)).get();
   if (!row) throw new ServiceError("not_found", `No such run: ${id}`);
   const rows = await db
@@ -95,7 +90,7 @@ export async function get(db: Db, id: string): Promise<IngestRun & { sourceRuns:
     .innerJoin(company, eq(source.companyId, company.id))
     .where(eq(sourceRun.runId, id))
     .orderBy(sourceRun.startedAt, sourceRun.id);
-  const sourceRuns: SourceRunDto[] = rows.map((r) => ({
+  const sourceRuns = rows.map((r) => ({
     id: r.sourceRun.id,
     sourceId: r.sourceRun.sourceId,
     sourceName: `${r.platform}/${r.board}`,
@@ -126,7 +121,7 @@ export async function trigger(env: Env): Promise<{ instanceId: string }> {
 }
 
 /** Dashboard tiles: job + source + last-run counters. */
-export async function summary(db: Db): Promise<DashboardSummary["data"]> {
+export async function summary(db: Db) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [active, retiredRecent, failing, last] = await Promise.all([
     db.select({ n: count() }).from(job).where(eq(job.status, "active")).get(),

@@ -1,47 +1,8 @@
-const NAMED = new Map<string, string>([
-  ["amp", "&"],
-  ["lt", "<"],
-  ["gt", ">"],
-  ["quot", '"'],
-  ["apos", "'"],
-  ["nbsp", " "],
-  ["ndash", "–"],
-  ["mdash", "—"],
-  ["lsquo", "‘"],
-  ["rsquo", "’"],
-  ["ldquo", "“"],
-  ["rdquo", "”"],
-  ["hellip", "…"],
-  ["middot", "·"],
-  ["bull", "•"],
-  ["copy", "©"],
-  ["reg", "®"],
-  ["trade", "™"],
-  ["eacute", "é"],
-  ["egrave", "è"],
-  ["agrave", "à"],
-  ["ccedil", "ç"],
-  ["uuml", "ü"],
-  ["ouml", "ö"],
-  ["auml", "ä"],
-  ["szlig", "ß"],
-  ["atilde", "ã"],
-  ["otilde", "õ"],
-  ["ntilde", "ñ"],
-]);
+import { decodeHTML } from "entities";
 
 /** Decode HTML entities (Greenhouse `content` arrives entity-escaped). */
 export function decodeEntities(html: string): string {
-  return html.replace(/&(#x?[0-9a-fA-F]+|\w+);/g, (m, entity: string) => {
-    if (entity[0] === "#") {
-      const code =
-        entity[1] === "x" || entity[1] === "X"
-          ? parseInt(entity.slice(2), 16)
-          : parseInt(entity.slice(1), 10);
-      return Number.isNaN(code) ? m : String.fromCodePoint(code);
-    }
-    return NAMED.get(entity) ?? m;
-  });
+  return decodeHTML(html);
 }
 
 /** Plain text for `description_text` — strip tags, decode, collapse, cap. */

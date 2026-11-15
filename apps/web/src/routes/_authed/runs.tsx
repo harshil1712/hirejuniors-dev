@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Banner, Button, Loader, Table, Text, Empty } from "@cloudflare/kumo";
 import { Play, WarningCircle } from "@phosphor-icons/react";
-import type { IngestRun } from "../../../worker/api/schemas";
+import type { IngestRun } from "../../lib/admin-api";
 import { listRuns, triggerRun } from "../../lib/admin-api";
 import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";

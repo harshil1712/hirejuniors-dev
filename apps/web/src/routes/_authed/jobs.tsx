@@ -13,7 +13,7 @@ import {
   Empty,
 } from "@cloudflare/kumo";
 import { MagnifyingGlass, WarningCircle } from "@phosphor-icons/react";
-import type { Company, Job, JobStatus } from "../../../worker/api/schemas";
+import type { Company, Job, JobStatus } from "../../lib/admin-api";
 import { listCompanies, listJobs, type JobFilters } from "../../lib/admin-api";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";

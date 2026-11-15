@@ -1,61 +1,29 @@
 // GET + POST /api/discovery — candidate list and manual domain adds.
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
 import { drizzle } from "drizzle-orm/d1";
-import { requireAdmin } from "../middleware/principal";
-import { json } from "./errors";
-import { ErrorResponse } from "./schemas";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
+import { onApiError, validationHook } from "./errors";
 import * as svc from "../services/discovery";
-import { DiscoveryAdd, DiscoveryAddResult, DiscoveryList } from "./schemas";
+import { DiscoveryAdd, DiscoveryListQuery } from "./schemas";
 import { addManualCandidates } from "@hirejuniors/jobs/discover";
 
-const errors = (...codes: number[]) =>
-  Object.fromEntries(
-    codes.map((code) => [code, { content: json(ErrorResponse), description: "Error" }]),
-  );
+type AppEnv = { Bindings: Env; Variables: PrincipalVars };
 
-export const discoveryApi = new OpenAPIHono<{ Bindings: Env }>();
-
-const listQuery = z.object({
-  status: z.enum(["queued", "found", "not_found", "duplicate", "failed"]).optional(),
-  cursor: z.string().optional(),
-});
-
-discoveryApi.openapi(
-  createRoute({
-    method: "get",
-    path: "/discovery",
-    tags: ["Discovery"],
-    security: [{ bearerAuth: [] }],
-    middleware: [requireAdmin],
-    request: { query: listQuery },
-    responses: {
-      200: { content: json(DiscoveryList), description: "Candidates" },
-      ...errors(400, 401, 403),
+export const discoveryApi = new Hono<AppEnv>()
+  .onError(onApiError)
+  .get(
+    "/discovery",
+    requireAdmin,
+    zValidator("query", DiscoveryListQuery, validationHook),
+    async (c) => {
+      const { status, cursor } = c.req.valid("query");
+      const db = drizzle(c.env.DB);
+      return c.json(await svc.list(db, { status, cursor }), 200);
     },
-  }),
-  async (c) => {
-    const { status, cursor } = c.req.valid("query");
-    const db = drizzle(c.env.DB);
-    return c.json(await svc.list(db, { status, cursor }), 200);
-  },
-);
-
-discoveryApi.openapi(
-  createRoute({
-    method: "post",
-    path: "/discovery",
-    tags: ["Discovery"],
-    security: [{ bearerAuth: [] }],
-    middleware: [requireAdmin],
-    request: { body: { content: json(DiscoveryAdd), required: true } },
-    responses: {
-      200: { content: json(DiscoveryAddResult), description: "Added count" },
-      ...errors(400, 401, 403),
-    },
-  }),
-  async (c) => {
+  )
+  .post("/discovery", requireAdmin, zValidator("json", DiscoveryAdd, validationHook), async (c) => {
     const { domains } = c.req.valid("json");
     const db = drizzle(c.env.DB);
     return c.json({ data: { added: await addManualCandidates(db, domains) } }, 200);
-  },
-);
+  });

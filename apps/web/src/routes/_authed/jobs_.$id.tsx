@@ -2,7 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Banner, Button, LayerCard, Loader, Select, Text } from "@cloudflare/kumo";
 import { ArrowSquareOut, WarningCircle } from "@phosphor-icons/react";
-import type { Job } from "../../../worker/api/schemas";
+import type { Job } from "../../lib/admin-api";
 import { approveJob, getJob, rejectJob, setJobStatus } from "../../lib/admin-api";
 import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -42,7 +42,7 @@ function JobDetail() {
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [approveLevel, setApproveLevel] = useState("junior");
+  const [approveLevel, setApproveLevel] = useState<NonNullable<Job["level"]>>("junior");
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -95,7 +95,7 @@ function JobDetail() {
                   <Select
                     label="Level"
                     value={approveLevel}
-                    onValueChange={(v) => v && setApproveLevel(v)}
+                    onValueChange={(v) => v && setApproveLevel(v as NonNullable<Job["level"]>)}
                     items={LEVEL_OPTIONS}
                     className="w-36"
                   />

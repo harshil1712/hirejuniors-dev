@@ -1,13 +1,13 @@
 import { asc, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { company } from "../../schema/db";
-import type { Company, CompanyCreate, CompanyUpdate } from "../api/schemas";
+import type { CompanyCreate, CompanyUpdate } from "../api/schemas";
 import { ServiceError } from "./errors";
 import { slugify } from "@hirejuniors/jobs/slug";
 
 type Db = DrizzleD1Database;
 
-function toApi(row: typeof company.$inferSelect): Company {
+function toApi(row: typeof company.$inferSelect) {
   return {
     id: row.id,
     name: row.name,
@@ -19,7 +19,7 @@ function toApi(row: typeof company.$inferSelect): Company {
   };
 }
 
-export function list(db: Db): Promise<Company[]> {
+export function list(db: Db) {
   return db
     .select()
     .from(company)
@@ -27,7 +27,7 @@ export function list(db: Db): Promise<Company[]> {
     .then((rows) => rows.map(toApi));
 }
 
-export async function create(db: Db, input: CompanyCreate): Promise<Company> {
+export async function create(db: Db, input: CompanyCreate) {
   const slug = input.slug ?? slugify(input.name);
   const existing = await db
     .select({ id: company.id })
@@ -48,7 +48,7 @@ export async function create(db: Db, input: CompanyCreate): Promise<Company> {
   return toApi(row!);
 }
 
-export async function update(db: Db, id: string, patch: CompanyUpdate): Promise<Company> {
+export async function update(db: Db, id: string, patch: CompanyUpdate) {
   const existing = await db.select().from(company).where(eq(company.id, id)).get();
   if (!existing) throw new ServiceError("not_found", `No such company: ${id}`);
   if (patch.slug !== undefined && patch.slug !== existing.slug) {

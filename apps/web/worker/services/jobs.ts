@@ -1,7 +1,7 @@
 import { and, desc, eq, lt, like, or, type SQL } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { company, job } from "../../schema/db";
-import type { Job, JobListQuery } from "../api/schemas";
+import type { JobLevel, JobListQuery } from "../api/schemas";
 import { ServiceError } from "./errors";
 
 type Db = DrizzleD1Database;
@@ -14,7 +14,7 @@ const jobCompany = {
 
 type CompanyBrief = { id: string; name: string; slug: string };
 
-function toApi(row: { job: typeof job.$inferSelect; company: CompanyBrief }): Job {
+function toApi(row: { job: typeof job.$inferSelect; company: CompanyBrief }) {
   const j = row.job;
   const iso = (d: Date | null) => (d ? d.toISOString() : null);
   return {
@@ -76,7 +76,7 @@ function encodeCursor(firstSeenAt: Date, id: string): string {
 export async function list(
   db: Db,
   query: JobListQuery,
-): Promise<{ items: Job[]; nextCursor: string | null }> {
+): Promise<{ items: ReturnType<typeof toApi>[]; nextCursor: string | null }> {
   const conditions: SQL[] = [eq(job.status, query.status)];
   if (query.level !== undefined) conditions.push(eq(job.level, query.level));
   if (query.country !== undefined)
@@ -115,7 +115,7 @@ export async function list(
   return { items: items.map(toApi), nextCursor };
 }
 
-export async function get(db: Db, id: string): Promise<Job> {
+export async function get(db: Db, id: string) {
   const row = await db
     .select({ job, company: jobCompany })
     .from(job)
@@ -128,7 +128,7 @@ export async function get(db: Db, id: string): Promise<Job> {
 
 /** Approve a review/rejected job → active with an admin-picked level.
  * `classified_by = 'admin'` makes the decision sticky across content changes. */
-export async function approve(db: Db, id: string, level: Job["level"]): Promise<Job> {
+export async function approve(db: Db, id: string, level: JobLevel) {
   const now = new Date();
   await get(db, id); // not_found
   await db
@@ -147,7 +147,7 @@ export async function approve(db: Db, id: string, level: Job["level"]): Promise<
 }
 
 /** Reject → status rejected, reason admin (sticky like approve). */
-export async function reject(db: Db, id: string): Promise<Job> {
+export async function reject(db: Db, id: string) {
   const now = new Date();
   await get(db, id); // not_found
   await db
@@ -165,7 +165,7 @@ export async function reject(db: Db, id: string): Promise<Job> {
 
 /** Manual retire/restore. Manual retirement is sticky — the ingest diff
  * never reactivates a `manual` retiree (see apps/jobs). */
-export async function setStatus(db: Db, id: string, status: "active" | "retired"): Promise<Job> {
+export async function setStatus(db: Db, id: string, status: "active" | "retired") {
   const now = new Date();
   const patch =
     status === "retired"

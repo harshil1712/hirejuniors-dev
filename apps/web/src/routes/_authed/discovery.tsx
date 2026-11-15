@@ -84,7 +84,7 @@ function Discovery() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Discovery"
-        description="Careers-page candidates being probed for known ATS boards."
+        description="Domains and job-board URLs being probed for known ATS boards."
       />
 
       <LayerCard>

@@ -19,6 +19,7 @@
   "dependencies": {
     "@hirejuniors/db": "workspace:*",
     "drizzle-orm": "0.45.4",
+    "entities": "8.1.0",
     "nanoid": "6.0.2",
     "zod": "4.6.7"
   },

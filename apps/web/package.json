@@ -20,7 +20,7 @@
     "@hirejuniors/brand": "workspace:*",
     "@hirejuniors/db": "workspace:*",
     "@hirejuniors/jobs": "workspace:*",
-    "@hono/zod-openapi": "1.6.3",
+    "@hono/zod-validator": "0.9.1",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-router": "1.170.46",
     "@vitejs/plugin-react": "6.1.2",

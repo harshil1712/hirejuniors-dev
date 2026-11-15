@@ -4,14 +4,7 @@ import { adapterFor, type SourceRow } from "@hirejuniors/jobs/platforms";
 import { classifyLevel, isExcluded } from "@hirejuniors/jobs/classify";
 import { parseLocation } from "@hirejuniors/jobs/location";
 import { company, job, source } from "../../schema/db";
-import type {
-  Source,
-  SourceCreate,
-  SourcePlatform,
-  SourcePreview,
-  SourcePreviewResult,
-  SourceUpdate,
-} from "../api/schemas";
+import type { SourceCreate, SourcePlatform, SourcePreview, SourceUpdate } from "../api/schemas";
 import { ServiceError } from "./errors";
 
 type Db = DrizzleD1Database;
@@ -28,7 +21,7 @@ type SourceJoinRow = {
   activeJobs: number;
 };
 
-function toApi(row: SourceJoinRow): Source {
+function toApi(row: SourceJoinRow) {
   const s = row.source;
   const iso = (d: Date | null) => (d ? d.toISOString() : null);
   return {
@@ -52,7 +45,7 @@ function toApi(row: SourceJoinRow): Source {
   };
 }
 
-export function list(db: Db): Promise<Source[]> {
+export function list(db: Db) {
   return db
     .select({
       source,
@@ -96,7 +89,7 @@ async function ensureBoardFree(
   }
 }
 
-export async function create(db: Db, input: SourceCreate): Promise<Source> {
+export async function create(db: Db, input: SourceCreate) {
   const parent = await db
     .select({ id: company.id })
     .from(company)
@@ -139,7 +132,7 @@ async function listWhere(db: Db, where: SQL | undefined) {
     .where(where);
 }
 
-export async function update(db: Db, id: string, patch: SourceUpdate): Promise<Source> {
+export async function update(db: Db, id: string, patch: SourceUpdate) {
   const rows = await listWhere(db, eq(source.id, id));
   if (rows.length === 0) throw new ServiceError("not_found", `No such source: ${id}`);
   const current = rows[0].source;
@@ -186,7 +179,16 @@ function previewSourceRow(input: SourcePreview): SourceRow {
 export async function preview(
   input: SourcePreview,
   fetcher: typeof fetch,
-): Promise<SourcePreviewResult["data"]> {
+): Promise<{
+  fetched: number;
+  kept: number;
+  sample: {
+    title: string;
+    level: string | null;
+    locationRaw: string;
+    countryCode: string | null;
+  }[];
+}> {
   validateConfig(input.platform, input.config);
   const src = previewSourceRow(input);
   let listings;

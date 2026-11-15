@@ -16,12 +16,7 @@ import {
   Empty,
 } from "@cloudflare/kumo";
 import { Plus, WarningCircle } from "@phosphor-icons/react";
-import type {
-  Company,
-  Source,
-  SourcePlatform,
-  SourcePreviewResult,
-} from "../../../worker/api/schemas";
+import type { Company, Source, SourcePlatform, SourcePreviewResult } from "../../lib/admin-api";
 import {
   createCompany,
   createSource,
