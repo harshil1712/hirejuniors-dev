@@ -137,10 +137,23 @@ rows with `origin = 'manual'`. For each queued manual candidate:
      Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
 3. If no link is found, guess boards from the first label of `d`: the label
    itself (e.g. `stripe` from `stripe.com`), then — if the label ends with
-   `hq`, `app`, `inc`, `labs`, `io` or `jobs` and is longer than that suffix
-   - 2 chars — the label without the suffix (e.g. `datadog` from
-     `datadoghq.com`). For each guess, probe Greenhouse, Lever, Ashby in that
-     order.
+   `hq`, `app`, `inc`, `labs`, `io` or `jobs` and is at least 3 characters
+   longer than that suffix — the label without the suffix (e.g. `datadog`
+   from `datadoghq.com`). For each guess, probe **all three** platforms
+   (cheap GETs) and keep only plausible matches:
+   - a Greenhouse result whose board `name` is known must equal the guess
+     after normalising both (lower-case, keep `a-z0-9` only, drop a trailing
+     `inc`/`ltd`/`careers`/`jobs`); otherwise discard it (real run:
+     `wise.com` matched a Greenhouse board named "Wise Worksite Field
+     Sales");
+   - the board must list at least 1 job (`probe` returns `jobCount` from the
+     envelope).
+
+   Among the plausible matches across all guesses pick the one with the
+   **most jobs** (real run: `ramp.com` matched a 1-job Greenhouse board
+   "RAMP" before Ramp's 180-job Ashby board). Board links found on the page
+   (step 2) skip this check — the company's own page points at them.
+
 4. First successful `probe` → `found`. Network errors on every attempt →
    `failed` (retried next run while `attempts < 3`).
 5. **Careers-page fallback.** No ATS board found, but one of the step-1 pages
