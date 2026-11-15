@@ -95,7 +95,7 @@ Seed (`0005`): the two existing sources get `origin = 'seed'`.
 
 Unchanged contract: `parseConfig(json)`, `fetchListings(fetcher, source)`,
 pure `toListings(payload, source)`. Add to each of greenhouse/lever/ashby a
-**`probe(fetcher, board) → { ok: true, companyName?: string } | { ok: false }`**
+**`probe(fetcher, board) → { ok: true, companyName?: string, jobCount: number } | { ok: false }`**
 used by discovery: one GET of the same endpoint `fetchListings` uses (without
 `content=true` for Greenhouse); `ok` = HTTP 200 and the payload zod-parses.
 Greenhouse `companyName` comes from `GET /v1/boards/{board}` → `name`; others
@@ -336,7 +336,7 @@ extraction; persist only via §Extraction rules. Rejected jobs get
 
 A Clef error (binding throws / non-2xx) throws the step → Workflow retries
 (3, exponential); after retries the job stays `pending` and the run moves
-on. The classify loop stops after **25 steps** (500 jobs) per run; the rest
+on. The classify loop stops after **50 steps** (1,000 jobs) per run; the rest
 wait for the next run.
 
 ## Extraction (`extract.ts`)
@@ -458,7 +458,7 @@ Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
    (re-enabled as trial).
 5. `ingest:<sourceId>` — per source (retries 3): fetch → shrink guard →
    pre-filter → upsert (new/changed → `pending`) → feed diff.
-6. `classify:<n>` — ≤ 25 steps × 20 pending jobs: decision + extraction.
+6. `classify:<n>` — ≤ 50 steps × 20 pending jobs: decision + extraction.
 7. `trial` — trial evaluation for sources ingested this run.
 8. `expire`.
 9. `linkcheck:select`, `linkcheck:<n>` — link + page check, breaker.
