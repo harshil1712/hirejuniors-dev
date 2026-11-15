@@ -20,8 +20,6 @@
   "vars": {
     "BETTER_AUTH_SECRET": "test-secret-at-least-32-characters-long!",
     "BETTER_AUTH_URL": "http://localhost:8787",
-    "GOOGLE_CLIENT_ID": "",
-    "GOOGLE_CLIENT_SECRET": "",
     "OWNER_ADMIN_EMAIL": "owner@example.com",
     // Cloudflare's always-pass Turnstile test pair — siteverify succeeds for
     // any token, so sign-up tests need no real widget.

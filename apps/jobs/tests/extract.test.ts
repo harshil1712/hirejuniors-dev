@@ -17,7 +17,6 @@ interface BaseRow {
   descriptionHtml: string | null;
   postedAt: Date | null;
   firstSeenAt: Date;
-  validThrough: Date | null;
 }
 function row(over: RowOverrides = {}) {
   return {
@@ -29,7 +28,6 @@ function row(over: RowOverrides = {}) {
     descriptionHtml: "<p>desc</p>",
     postedAt: new Date("2026-03-01T00:00:00Z"),
     firstSeenAt: new Date("2026-03-01T00:00:00Z"),
-    validThrough: null,
     ...over,
   } as Parameters<typeof extractForJob>[2];
 }
@@ -53,19 +51,11 @@ describe("extractForJob", () => {
   it("confidence gate: below 0.8 is ignored", async () => {
     const out = await extractForJob(
       db(),
-      ai({ min_years_experience: field(2, 0.79) }),
+      ai({ salary_min: field(50000, 0.79), salary_max: field(60000, 0.79) }),
       row(),
       HINTS,
     );
-    expect(out.set.minYearsExperience).toBeUndefined();
-  });
-
-  it("years ≥ 3 → rejectedExperience", async () => {
-    const out = await extractForJob(db(), ai({ min_years_experience: field(3) }), row(), HINTS);
-    expect(out.set.minYearsExperience).toBe(3);
-    expect(out.rejectedExperience).toBe(true);
-    const low = await extractForJob(db(), ai({ min_years_experience: field(2) }), row(), HINTS);
-    expect(low.rejectedExperience).toBe(false);
+    expect(out.set.salaryMin).toBeUndefined();
   });
 
   it("salary min > max dropped", async () => {
@@ -122,48 +112,6 @@ describe("extractForJob", () => {
     expect(out.set.salaryPeriod).toBe("YEAR");
   });
 
-  it("deadline outside window ignored", async () => {
-    const out = await extractForJob(
-      db(),
-      ai({ application_deadline: field("2028-06-01") }),
-      row(),
-      HINTS,
-    );
-    expect(out.set.validThrough).toBeUndefined();
-    const past = await extractForJob(
-      db(),
-      ai({ application_deadline: field("2020-01-01") }),
-      row(),
-      HINTS,
-    );
-    expect(past.set.validThrough).toBeUndefined();
-  });
-
-  it("deadline inside window set; existing validThrough untouched", async () => {
-    const out = await extractForJob(
-      db(),
-      ai({ application_deadline: field("2026-06-01") }),
-      row(),
-      HINTS,
-    );
-    expect(out.set.validThrough).toEqual(new Date("2026-06-01T00:00:00Z"));
-    const keep = await extractForJob(
-      db(),
-      ai({ application_deadline: field("2026-06-01") }),
-      row({ validThrough: new Date("2026-05-01T00:00:00Z") }),
-      HINTS,
-    );
-    expect(keep.set.validThrough).toBeUndefined();
-  });
-
-  it("grad year out of range dropped, in range kept", async () => {
-    const cy = new Date().getUTCFullYear();
-    const out = await extractForJob(db(), ai({ graduation_year: field(cy - 3) }), row(), HINTS);
-    expect(out.set.graduationYear).toBeUndefined();
-    const ok = await extractForJob(db(), ai({ graduation_year: field(cy + 1) }), row(), HINTS);
-    expect(ok.set.graduationYear).toBe(cy + 1);
-  });
-
   it("Clairic throw leaves fields null and doesn't throw", async () => {
     const failing: AiModels = {
       async decide() {
@@ -174,8 +122,7 @@ describe("extractForJob", () => {
       },
     };
     const out = await extractForJob(db(), failing, row(), HINTS);
-    expect(out.set.minYearsExperience).toBeUndefined();
+    expect(out.set.extractedAt).toBeUndefined();
     expect(out.inputTokens).toBe(0);
-    expect(out.rejectedExperience).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/companies";
-import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
 import { CompanyCreate, CompanyList, CompanyResult, CompanyUpdate, ErrorResponse } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
@@ -23,7 +23,7 @@ companiesApi.openapi(
     path: "/companies",
     tags: ["Companies"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     responses: {
       200: { content: json(CompanyList), description: "All companies" },
       ...errors(401, 403),
@@ -41,7 +41,7 @@ companiesApi.openapi(
     path: "/companies",
     tags: ["Companies"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: { body: { content: json(CompanyCreate), required: true } },
     responses: {
       201: { content: json(CompanyResult), description: "Created company" },
@@ -62,7 +62,7 @@ companiesApi.openapi(
     path: "/companies/{id}",
     tags: ["Companies"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: {
       params: idParam,
       body: { content: json(CompanyUpdate), required: true },

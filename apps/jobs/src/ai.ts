@@ -166,11 +166,6 @@ export const DECIDE_QUESTIONS = {
 } as const;
 
 export const EXTRACT_FIELDS = {
-  min_years_experience: {
-    type: "number",
-    decimals: 0,
-    instructions: "Minimum years of professional work experience required. Null if not stated.",
-  },
   salary_min: {
     type: "number",
     decimals: 0,
@@ -183,59 +178,4 @@ export const EXTRACT_FIELDS = {
     instructions:
       "Highest stated pay amount for this role, as a plain number. Same as the lowest if only one amount is given. Null if pay is not stated.",
   },
-  application_deadline: {
-    type: "date",
-    instructions: "Last date applications are accepted. Null if not stated.",
-  },
-  graduation_year: {
-    type: "number",
-    decimals: 0,
-    instructions: "Year candidates are expected to graduate. Null if not stated.",
-  },
 } as const;
-
-export const PAGE_OPEN_QUESTION = {
-  open: {
-    type: "noul",
-    instructions:
-      "Is this page a specific job posting that is still open and accepting applications? Answer no for careers home pages, search pages, 'job not found' or 'no longer accepting applications' pages.",
-  },
-} as const;
-
-// --- Careers-page sources (spec §Careers-page sources) — verbatim. ---
-
-/** One `noul` per link, id `l{i}` (spec §Careers listing parse step 2). */
-export function jobLinkQuestion(i: number) {
-  return {
-    [`l${i}`]: {
-      type: "noul",
-      instructions: `Is link ${i} a link to one individual job posting (not a category, search, team, location or general careers page)?`,
-    },
-  } as const satisfies DecideQuestions;
-}
-
-/** State prefix for the listing parse — spec §Careers step 2. */
-export const JOB_LINK_STATE_PREFIX = "Links from the careers page ";
-
-/** Discovery one-hop question (spec §Discovery step 5). */
-export function oneHopQuestions(links: { text: string; url: string }[]) {
-  const criteria = {
-    ...Object.fromEntries(links.map((l, i) => [`link_${i}`, `${l.text} → ${l.url}`])),
-    none: "None of these links lists open positions",
-  };
-  return {
-    open_positions: {
-      type: "choice",
-      instructions: "Which link leads to the page that lists the company's open job positions?",
-      criteria,
-    },
-  } as const satisfies DecideQuestions;
-}
-
-/** Clairic fields for a careers-page job posting (spec §Careers ingest). */
-export const CAREERS_PAGE_FIELDS = {
-  location: {
-    type: "text",
-    instructions: "Where the job is based, as written on the page",
-  },
-} as const satisfies ExtractFields;

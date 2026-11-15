@@ -5,6 +5,4 @@ export const PRODUCT = {
   domain: "hirejuniors.dev",
   appDomain: "app.hirejuniors.dev",
   emailFrom: "noreply@hirejuniors.dev",
-  apiKeyPrefix: "hj_",
-  api: { publicSpec: false, rateLimitPerMinute: 120 },
 } as const;

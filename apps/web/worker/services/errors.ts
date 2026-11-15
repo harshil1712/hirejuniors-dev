@@ -5,7 +5,7 @@ export type ServiceErrorCode =
   | "upstream_failed"
   | "unavailable";
 
-/** Errors callers translate into HTTP status / MCP isError results. */
+/** Errors callers translate into HTTP status. */
 export class ServiceError extends Error {
   readonly code: ServiceErrorCode;
   readonly details?: { path: string; message: string }[];

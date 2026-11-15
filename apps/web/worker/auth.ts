@@ -1,11 +1,8 @@
 import { APIError, betterAuth } from "better-auth";
-import { admin, captcha, oAuthProxy } from "better-auth/plugins";
-import { apiKey } from "@better-auth/api-key";
+import { admin, captcha } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import * as authSchema from "../src/auth-schema";
-import { PRODUCT } from "../src/config";
 import { sendAuthEmail, verifyEmailTemplate, resetPasswordTemplate } from "./email";
 import { assertTurnstileConfig } from "./turnstile-guard";
 
@@ -28,23 +25,6 @@ export function bootstrapAdmin<T extends { email?: string; emailVerified?: boole
 export function createAuth(env: Env) {
   assertTurnstileConfig(env.TURNSTILE_SECRET_KEY, env.BETTER_AUTH_URL);
   const db = drizzle(env.DB, { schema: authSchema });
-
-  // Register Google only when real credentials exist — an empty provider
-  // breaks sign-in otherwise.
-  const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim());
-  // Per-deployment switch: close NEW sign-ups except for the owner email
-  // (enforced in the user.create hook below, so it covers email + social);
-  // existing accounts still sign in.
-  const signupDisabled = env.SIGNUP_DISABLED === "true";
-  const ownerEmail = env.OWNER_ADMIN_EMAIL.toLowerCase();
-  const socialProviders = googleEnabled
-    ? {
-        google: {
-          clientId: env.GOOGLE_CLIENT_ID,
-          clientSecret: env.GOOGLE_CLIENT_SECRET,
-        },
-      }
-    : {};
 
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
@@ -69,28 +49,16 @@ export function createAuth(env: Env) {
         await sendAuthEmail(env, { to: user.email, ...t });
       },
     },
-    socialProviders,
-    // Self-service account deletion (Settings → Delete account). Better Auth
-    // requires the password for credential users, or a fresh session.
-    user: {
-      deleteUser: {
-        enabled: true,
-        // The apikey table has no FK — revoke the owner's keys explicitly.
-        afterDelete: async (u) => {
-          await db.delete(authSchema.apikey).where(eq(authSchema.apikey.referenceId, u.id));
-        },
-      },
-    },
     databaseHooks: {
       user: {
         create: {
           before: async (user) => {
-            if (signupDisabled && user.email?.toLowerCase() !== ownerEmail) {
+            if (user.email?.toLowerCase() !== env.OWNER_ADMIN_EMAIL.toLowerCase()) {
               // Not FORBIDDEN: with requireEmailVerification the sign-up
               // endpoint turns a 403 from createUser into a generic 200
               // (anti-enumeration), which would look like a successful
               // sign-up to a client even though no row was created.
-              throw new APIError("BAD_REQUEST", { message: "Sign-up is disabled" });
+              throw new APIError("BAD_REQUEST", { message: "Sign-up is restricted" });
             }
             return { data: bootstrapAdmin(user, env.OWNER_ADMIN_EMAIL) };
           },
@@ -139,16 +107,6 @@ export function createAuth(env: Env) {
         ],
       }),
       admin(),
-      // API keys for the agent-facing API (spec §4.1). Internal plugin rate
-      // limiting stays off — per-key limiting is ours (CF RateLimit binding).
-      apiKey({ defaultPrefix: PRODUCT.apiKeyPrefix, rateLimit: { enabled: false } }),
-      // Google sign-in on preview deployments: proxies OAuth through
-      // production's registered redirect URI. No-op on the production URL.
-      oAuthProxy({
-        productionURL: `https://${PRODUCT.appDomain}`,
-        currentURL: env.OAUTH_PROXY_URL || env.BETTER_AUTH_URL,
-        secret: env.OAUTH_PROXY_SECRET || undefined,
-      }),
     ],
   });
 }

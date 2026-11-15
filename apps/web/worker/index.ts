@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { SPA_CSP } from "./security-headers";
 import { requestIdMiddleware } from "./middleware/request-id";
@@ -7,20 +6,13 @@ import { authRateLimit } from "./middleware/rate-limit";
 import { createAuth } from "./auth";
 import { publicConfigRoutes } from "./routes/public-config";
 import { meRoutes } from "./routes/me";
-import { PRODUCT } from "../src/config";
-import { sessionPrincipal, requireApiKey } from "./middleware/principal";
-import { apiKeyRateLimit } from "./middleware/rate-limit";
-import { mcpHandler } from "./mcp";
-import { errorJson } from "./api/errors";
+import { sessionPrincipal } from "./middleware/principal";
 import { jobsApi } from "./api/jobs";
 import { companiesApi } from "./api/companies";
 import { sourcesApi } from "./api/sources";
 import { runsApi } from "./api/runs";
 import { discoveryApi } from "./api/discovery";
-import { discoveryRoutes } from "./routes/discovery";
 import { dashboardApi } from "./api/dashboard";
-import { apiKeysApi } from "./api/api-keys";
-import { createV1Api } from "./api/v1";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -66,8 +58,7 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 app.route("/", publicConfigRoutes);
 app.route("/", meRoutes);
 
-// Session-authenticated dashboard APIs for the web app — the same routers
-// /api/v1 mounts with API-key auth (dashboard summary stays session-only).
+// Session-authenticated dashboard APIs for the web app.
 for (const name of ["jobs", "companies", "sources", "runs", "dashboard", "discovery"]) {
   app.use(`/api/${name}`, sessionPrincipal);
   app.use(`/api/${name}/*`, sessionPrincipal);
@@ -78,58 +69,6 @@ app.route("/api", sourcesApi);
 app.route("/api", runsApi);
 app.route("/api", discoveryApi);
 app.route("/api", dashboardApi);
-
-// Key management (Settings → API keys) — session-only router.
-app.use("/api/api-keys", sessionPrincipal);
-app.use("/api/api-keys/*", sessionPrincipal);
-app.route("/api", apiKeysApi);
-
-// Versioned agent API — API-key auth only (middleware inside the factory);
-// cookies are never consulted.
-app.route("/", createV1Api(PRODUCT.api));
-
-// Unknown /api/v1 paths get the envelope 404 — Hono's sub-app notFound
-// doesn't fire when the router is mounted.
-app.all("/api/v1/*", (c) => errorJson(c, 404, "not_found", "No such endpoint"));
-
-// RFC 9727 api-catalog — only served when PRODUCT.api.publicSpec.
-app.route("/", discoveryRoutes(PRODUCT.api));
-
-// MCP server (spec §6) — bearer-only, so open CORS is safe: no cookies ever.
-app.use(
-  "/mcp",
-  cors({
-    origin: "*",
-    allowHeaders: [
-      "Authorization",
-      "Content-Type",
-      "Mcp-Protocol-Version",
-      "Mcp-Session-Id",
-      "Last-Event-ID",
-    ],
-    exposeHeaders: [
-      "Mcp-Session-Id",
-      "WWW-Authenticate",
-      "RateLimit-Limit",
-      "RateLimit-Policy",
-      "Retry-After",
-    ],
-    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
-  }),
-);
-app.use("/mcp", requireApiKey);
-app.use("/mcp", apiKeyRateLimit);
-app.all("/mcp", (c) => {
-  const principal = c.get("principal");
-  return mcpHandler.fetch(c.req.raw, {
-    authInfo: {
-      token: c.req.header("authorization")!.slice("Bearer ".length),
-      clientId: principal.keyId ?? "",
-      scopes: principal.scopes,
-      extra: { userId: principal.userId, isAdmin: principal.isAdmin },
-    },
-  });
-});
 
 // Better Auth handler — catches all /api/auth/* requests (sign-in, sign-up,
 // email verification, reset, admin plugin endpoints, OAuth callbacks).

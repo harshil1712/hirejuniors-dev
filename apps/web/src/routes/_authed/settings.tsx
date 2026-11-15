@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useId, useState, type FormEvent, useRef } from "react";
-import { Button, Input, Loader, Text } from "@cloudflare/kumo";
+import { Button, Input, Loader } from "@cloudflare/kumo";
 import { authClient, useSession } from "../../lib/auth-client";
 import { authErrorMessage, type AuthErrorLike } from "../../lib/auth-errors";
 import { toast } from "../../lib/toast";
@@ -8,13 +8,12 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
 import { SettingsSection } from "../../components/settings-section";
 import { ConfirmDialog } from "../../components/confirm-dialog";
-import { ApiKeysSection } from "../../components/api-keys-section";
 import { FormError } from "../../components/form-error";
 import { PasswordInput } from "../../components/password-input";
 
 export const Route = createFileRoute("/_authed/settings")({ component: Settings });
 
-/** Whether this user signs in with a password (vs. Google only). null = loading. */
+/** Whether this user signs in with a password. null = loading. */
 function useHasPassword(): boolean | null {
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   useEffect(() => {
@@ -50,8 +49,6 @@ function Settings() {
           <ProfileSection key={user.id} name={user.name} email={user.email} />
           <PasswordSection hasPassword={hasPassword} />
           <SessionsSection />
-          <ApiKeysSection />
-          <DeleteAccountSection hasPassword={hasPassword} />
         </>
       )}
     </div>
@@ -115,7 +112,7 @@ function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
     return (
       <SettingsSection
         title="Password"
-        description="You sign in with Google, so there's no password to change."
+        description="There's no password on this account to change."
       />
     );
   }
@@ -206,66 +203,6 @@ function SessionsSection() {
           onConfirm={revoke}
           trigger={<Button variant="secondary">Sign out other sessions</Button>}
         />
-      }
-    />
-  );
-}
-
-function DeleteAccountSection({ hasPassword }: { hasPassword: boolean }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
-  const remove = async () => {
-    setError(null);
-    const r = await authClient.deleteUser({
-      password: hasPassword ? password : undefined,
-      callbackURL: "/sign-in",
-    });
-    if (r.error) {
-      setError(authErrorMessage(r.error, "Couldn't delete your account."));
-      setAttempt((n) => n + 1);
-      return false;
-    }
-    // Full reload: the session cookie is gone and every cached read with it.
-    location.assign("/sign-in?notice=account-deleted");
-  };
-
-  return (
-    <SettingsSection
-      title="Delete account"
-      description="Permanently delete your account and sign-in data. This can't be undone."
-      footer={
-        <ConfirmDialog
-          title="Delete your account?"
-          description="Your account, sessions and sign-in methods are deleted immediately. This can't be undone."
-          confirmLabel="Delete account"
-          variant="destructive"
-          onConfirm={remove}
-          confirmDisabled={hasPassword && !password}
-          onOpenChange={(open) => {
-            if (!open) {
-              setPassword("");
-              setError(null);
-            }
-          }}
-          trigger={<Button variant="secondary-destructive">Delete account</Button>}
-        >
-          {hasPassword ? (
-            <PasswordInput
-              label="Enter your password to confirm"
-              value={password}
-              onValueChange={setPassword}
-              autoComplete="current-password"
-              invalid={Boolean(error)}
-            />
-          ) : (
-            <Text variant="secondary" size="sm">
-              If you signed in more than a day ago, sign out and back in first.
-            </Text>
-          )}
-          <FormError message={error} attempt={attempt} />
-        </ConfirmDialog>
       }
     />
   );

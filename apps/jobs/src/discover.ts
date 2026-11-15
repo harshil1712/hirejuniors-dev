@@ -1,15 +1,13 @@
-// Board discovery — spec §Discovery. Manual domains + Common Crawl → probe →
-// company + source rows on `trial`, plus trial evaluation.
+// Board discovery — spec §Discovery. Listings feeds + manual inputs →
+// probe → company + source rows on `trial`, plus trial evaluation.
 import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { company, discoveryCandidate, discoveryCursor, job, source } from "@hirejuniors/db/schema";
+import { company, discoveryCandidate, job, source } from "@hirejuniors/db/schema";
 import { chunks } from "@hirejuniors/db/queries";
 import type { Db } from "./ingest";
 import type { BatchItem } from "drizzle-orm/batch";
-import { adapterFor, type AdapterCtx, type Fetcher } from "./platforms";
-import { extractMarkdownLinks, normaliseListingUrl, parseJobLinks } from "./platforms/careers-page";
-import { oneHopQuestions, type AiModels } from "./ai";
+import { adapterFor, type Fetcher } from "./platforms";
 import type { Browser } from "./browser";
 
 // Spec §Discovery — verbatim patterns, first match wins, in this order.
@@ -22,15 +20,7 @@ const ATS_PATTERNS: { platform: "greenhouse" | "lever" | "ashby"; re: RegExp }[]
   { platform: "ashby", re: /jobs\.ashbyhq\.com\/([A-Za-z0-9_.-]+)/ },
 ];
 const IGNORED_BOARDS = new Set(["embed", "api", "v1", "jobs"]);
-const BOARD_RE = /^[A-Za-z0-9_.-]+$/;
 
-const CRAWL_HOSTS: { host: string; platform: "greenhouse" | "lever" | "ashby" }[] = [
-  { host: "boards.greenhouse.io", platform: "greenhouse" },
-  { host: "job-boards.greenhouse.io", platform: "greenhouse" },
-  { host: "jobs.lever.co", platform: "lever" },
-  { host: "jobs.ashbyhq.com", platform: "ashby" },
-];
-const CRAWL_PAGES_PER_RUN = 2;
 export const DISCOVERY_STEP_SIZE = 15;
 const MAX_ATTEMPTS = 3;
 const RETRY_DAYS = 28;
@@ -45,13 +35,15 @@ function atsLinks(html: string): { platform: "greenhouse" | "lever" | "ashby"; b
   return found;
 }
 
+/** GET a page for link scanning. null = no HTTP answer (throw/timeout);
+ * a real response that isn't ok counts as an answer with no links. */
 async function fetchText(fetcher: Fetcher, url: string): Promise<string | null> {
   try {
     const res = await fetcher(url, {
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return "";
     const reader = res.body?.getReader();
     if (!reader) return (await res.text()).slice(0, 512 * 1024);
     let out = "";
@@ -83,13 +75,12 @@ async function uniqueCompanySlug(db: Db, name: string): Promise<string> {
       .from(company)
       .where(eq(company.slug, slug))
       .limit(1);
-    if (hit.length === 0) return slug;
+    if (!hit.length) return slug;
   }
   return `${base}-${nanoid(6)}`;
 }
 
-/** Create company + trial source for a probed candidate, or mark duplicate. */
-type FoundPlatform = "greenhouse" | "lever" | "ashby" | "careers_page";
+type FoundPlatform = "greenhouse" | "lever" | "ashby";
 
 async function createFound(
   db: Db,
@@ -98,7 +89,6 @@ async function createFound(
   board: string,
   companyName: string | undefined,
   homepageUrl: string | null,
-  config = "{}",
 ) {
   const existing = await db
     .select({ id: source.id })
@@ -133,7 +123,6 @@ async function createFound(
       companyId,
       platform,
       board,
-      config,
       includeAll: false,
       enabled: true,
       origin: "discovered",
@@ -147,38 +136,7 @@ async function createFound(
   return "found" as const;
 }
 
-const SLUG_SUFFIXES = ["hq", "app", "inc", "labs", "io", "jobs"] as const;
-
-/** Step-3 board guesses from a domain: the first label, then the label
- * minus a company suffix when enough of it remains (hq.com → no variant —
- * "hq" isn't longer than the suffix + 2). */
-export function slugGuesses(domain: string): string[] {
-  const label = domain.split(".")[0] ?? "";
-  const guesses = BOARD_RE.test(label) ? [label] : [];
-  for (const suffix of SLUG_SUFFIXES) {
-    if (label.endsWith(suffix) && label.length > suffix.length + 2) {
-      const guess = label.slice(0, -suffix.length);
-      if (BOARD_RE.test(guess) && !guesses.includes(guess)) guesses.push(guess);
-      break;
-    }
-  }
-  return guesses;
-}
-
-/** Board-name plausibility for slug guesses (spec §Discovery step 3):
- * lower-case, keep a-z0-9 only, drop a trailing inc/ltd/careers/jobs. */
-function normaliseBoardName(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .replace(/(inc|ltd|careers|jobs)$/, "");
-}
-
-async function tryProbe(
-  fetcher: Fetcher,
-  platform: "greenhouse" | "lever" | "ashby",
-  board: string,
-) {
+async function tryProbe(fetcher: Fetcher, platform: FoundPlatform, board: string) {
   const adapter = adapterFor(platform);
   if (!adapter.probe) return { ok: false, networkError: false } as const;
   return adapter.probe(fetcher, board);
@@ -187,7 +145,6 @@ async function tryProbe(
 export interface DiscoverCtx {
   fetcher: Fetcher;
   browser?: Browser;
-  ai?: AiModels;
 }
 
 /** One discover step: probe up to `limit` queued candidates, manual first. */
@@ -195,9 +152,8 @@ export async function discoverStep(
   db: Db,
   ctx: DiscoverCtx,
   limit = DISCOVERY_STEP_SIZE,
-): Promise<{ probed: number; found: number; aiInputTokens: number }> {
-  const { fetcher, browser, ai } = ctx;
-  const aiTokens = { n: 0 };
+): Promise<{ probed: number; found: number }> {
+  const { fetcher, browser } = ctx;
   const queued = await db
     .select()
     .from(discoveryCandidate)
@@ -208,7 +164,7 @@ export async function discoverStep(
       ),
     )
     .orderBy(
-      // manual before crawl, oldest first
+      // manual before listings, oldest first
       sql`case when ${discoveryCandidate.origin} = 'manual' then 0 else 1 end`,
       asc(discoveryCandidate.createdAt),
     )
@@ -221,9 +177,9 @@ export async function discoverStep(
       .set({ attempts: cand.attempts + 1, updatedAt: new Date() })
       .where(eq(discoveryCandidate.id, cand.id));
 
-    if (cand.origin === "crawl") {
-      // '<platform>:<board>' — straight to probe, steps 1–3 skipped.
-      const [platform, board] = cand.input.split(":") as ["greenhouse" | "lever" | "ashby", string];
+    if (cand.origin === "listings" || cand.input.includes(":")) {
+      // '<platform>:<board>' — straight to probe.
+      const [platform, board] = cand.input.split(":") as [FoundPlatform, string];
       const res = await tryProbe(fetcher, platform, board);
       if (res.ok) {
         if ((await createFound(db, cand, platform, board, res.companyName, null)) === "found")
@@ -242,9 +198,9 @@ export async function discoverStep(
       continue;
     }
 
-    // Manual: domain → careers-page scan → slug-guess probes (spec §Discovery).
-    // Step 1: try the four careers-URL candidates in order; first page that
-    // yields an ATS link wins.
+    // Manual domain: try the four careers-URL candidates in order; Browser
+    // Run `links` first (rendered, so script-injected boards count), fetch
+    // fallback. First page that yields an ATS link wins.
     const d = cand.input;
     const urls = [
       `https://${d}/careers`,
@@ -252,13 +208,9 @@ export async function discoverStep(
       `https://careers.${d}`,
       `https://${d}`,
     ];
-    let links: { platform: "greenhouse" | "lever" | "ashby"; board: string }[] = [];
+    let links: { platform: FoundPlatform; board: string }[] = [];
     let allFetchesFailed = true;
-    // First step-1 page that rendered (Browser Run or fetch) — step 5 input.
-    let renderedUrl: string | null = null;
     for (const url of urls) {
-      // Spec §Discovery step 1: Browser Run `links` (rendered, so script-
-      // injected boards count); on any browser error fall back to fetch.
       let text: string | null = null;
       if (browser) {
         try {
@@ -270,21 +222,14 @@ export async function discoverStep(
       if (text === null) text = await fetchText(fetcher, url);
       if (text === null) continue;
       allFetchesFailed = false;
-      renderedUrl ??= url;
       links = atsLinks(text);
       if (links.length) break;
     }
 
-    let outcome: "found" | "duplicate" | "not_found" | "failed" = "not_found";
-    let resolved: {
-      platform: "greenhouse" | "lever" | "ashby";
-      board: string;
-      name?: string;
-    } | null = null;
+    let resolved: { platform: FoundPlatform; board: string; name?: string } | null = null;
     // A probe that answers (even HTTP 404) proves connectivity; only probes
     // that throw/timeout count as network errors.
     let anyRealAnswer = false;
-
     for (const link of links) {
       const res = await tryProbe(fetcher, link.platform, link.board);
       if (res.ok) {
@@ -293,97 +238,42 @@ export async function discoverStep(
       }
       if (!res.networkError) anyRealAnswer = true;
     }
+
+    // No link found → guess the board slug from the domain: first DNS
+    // label, plus the label minus a trailing `hq` when ≥3 chars remain.
+    // Probe every guess on all three platforms; keep answers with ≥1 job,
+    // and require a Greenhouse board's company name (normalised) to equal
+    // the guess. Most jobs wins.
     if (!resolved && links.length === 0) {
-      // Step 3: slug guesses from the first label of the domain — the label
-      // itself, then the label minus a company suffix (hq, app, inc, labs,
-      // io, jobs) when it's > suffix+2 chars (datadoghq → datadog). Probe
-      // all three platforms for every guess and keep only plausible
-      // matches: jobCount ≥ 1, and a Greenhouse board whose known name
-      // doesn't normalise-equal the guess is discarded (spec §Discovery).
-      // The plausible match with the most jobs wins.
-      let best: {
-        platform: "greenhouse" | "lever" | "ashby";
-        board: string;
-        name?: string;
-        jobCount: number;
-      } | null = null;
-      for (const guess of slugGuesses(d)) {
-        for (const platform of ["greenhouse", "lever", "ashby"] as const) {
+      const label = d.split(".")[0];
+      const guesses = [label];
+      if (label.endsWith("hq") && label.length - 2 >= 3) guesses.push(label.slice(0, -2));
+      const norm = (s: string) =>
+        s
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "")
+          .replace(/(inc|ltd|careers|jobs)$/, "");
+      let best: { platform: FoundPlatform; board: string; name?: string; jobCount: number } | null =
+        null;
+      for (const guess of guesses) {
+        for (const platform of ["greenhouse", "lever", "ashby"] as FoundPlatform[]) {
           const res = await tryProbe(fetcher, platform, guess);
-          if (res.ok || res.networkError !== true) anyRealAnswer = true;
-          if (!res.ok || res.jobCount < 1) continue;
-          if (
-            platform === "greenhouse" &&
-            res.companyName &&
-            normaliseBoardName(res.companyName) !== normaliseBoardName(guess)
-          ) {
-            continue; // same-name collision on another company's board
+          if (!res.ok) {
+            if (!res.networkError) anyRealAnswer = true;
+            continue;
           }
-          if (!best || res.jobCount > best.jobCount) {
+          anyRealAnswer = true;
+          if (res.jobCount < 1) continue;
+          if (platform === "greenhouse" && norm(res.companyName ?? "") !== guess) continue;
+          if (!best || res.jobCount > best.jobCount)
             best = { platform, board: guess, name: res.companyName, jobCount: res.jobCount };
-          }
         }
       }
       if (best) resolved = { platform: best.platform, board: best.board, name: best.name };
     }
-    if (!resolved && allFetchesFailed && !anyRealAnswer) outcome = "failed";
 
-    // Spec §Discovery step 5 — careers-page fallback. No ATS board found but
-    // a step-1 page rendered: run the careers-page listing parse on it; ≥1
-    // job link → found. 0 links → one-hop choice, parse the chosen page.
-    if (!resolved && outcome !== "failed" && renderedUrl && browser && ai) {
-      const cctx: AdapterCtx = { fetcher, browser, ai, aiTokens };
-      let listingUrl = renderedUrl;
-      let jobLinks: { text: string; url: string }[] = [];
-      try {
-        jobLinks = await parseJobLinks(cctx, listingUrl);
-      } catch {
-        jobLinks = [];
-      }
-      if (jobLinks.length === 0) {
-        // One-hop: ≤40 same-site links from the rendered markdown → one
-        // clef-flash choice; accept non-"none" with p ≥ 0.60.
-        try {
-          const md = await browser.markdown(renderedUrl);
-          const sameSite = extractMarkdownLinks(md, renderedUrl, true).slice(0, 40);
-          if (sameSite.length > 0) {
-            const state = sameSite.map((l, i) => `${i}. ${l.text} → ${l.url}`).join("\n");
-            const res = await ai.decide("clef-flash", state, oneHopQuestions(sameSite));
-            aiTokens.n += res.inputTokens;
-            const ans = res.answers.open_positions;
-            if (ans && ans.type === "choice" && ans.choice !== "none") {
-              const p = ans.probabilities[ans.choice] ?? 0;
-              const idx = Number(ans.choice.slice("link_".length));
-              if (p >= 0.6 && Number.isInteger(idx) && sameSite[idx]) {
-                const chosen = sameSite[idx].url;
-                try {
-                  jobLinks = await parseJobLinks(cctx, chosen);
-                  if (jobLinks.length > 0) listingUrl = chosen;
-                } catch {
-                  jobLinks = [];
-                }
-              }
-            }
-          }
-        } catch {
-          // browser/ai error on the one-hop — leave jobLinks empty
-        }
-      }
-      if (jobLinks.length > 0) {
-        const board = normaliseListingUrl(listingUrl);
-        outcome = await createFound(
-          db,
-          cand,
-          "careers_page",
-          board,
-          titleCase(d.split(".")[0]),
-          `https://${d}`,
-          JSON.stringify({ listingUrl }),
-        );
-        if (outcome === "found") found++;
-        continue;
-      }
-    }
+    let outcome: "found" | "duplicate" | "not_found" | "failed" = "not_found";
+    if (!resolved && allFetchesFailed && !anyRealAnswer) outcome = "failed";
 
     if (resolved) {
       outcome = await createFound(
@@ -406,26 +296,30 @@ export async function discoverStep(
     }
     if (outcome === "found") found++;
   }
-  return { probed: queued.length, found, aiInputTokens: aiTokens.n };
+  return { probed: queued.length, found };
 }
 
-/** Normalise a pasted domain to lower-case bare host (shared with apps/web). */
-export function normalizeDomain(input: string): string | null {
-  let d = input.trim().toLowerCase();
-  if (!d) return null;
-  d = d
-    .replace(/^https?:\/\//, "")
-    .split("/")[0]
-    .split("?")[0];
+/** Normalise a pasted input: a domain → lower-case bare host; a URL on a
+ * Greenhouse/Lever/Ashby host → `<platform>:<board>` (dedupes with listings
+ * rows). Anything else → null. */
+export function normalizeInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  // Board slugs are case-sensitive (e.g. Ashby `Notion`) — keep URL case.
+  if (/^https?:\/\//i.test(trimmed)) {
+    const link = atsLinks(trimmed);
+    return link.length ? `${link[0].platform}:${link[0].board}` : null;
+  }
+  const d = trimmed.toLowerCase().split("/")[0].split("?")[0];
   if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(d)) return null;
   return d;
 }
 
-export async function addManualCandidates(db: Db, domains: string[]): Promise<number> {
+export async function addManualCandidates(db: Db, inputs: string[]): Promise<number> {
   const unique = [
     ...new Set(
-      domains.flatMap((d) => {
-        const n = normalizeDomain(d);
+      inputs.flatMap((d) => {
+        const n = normalizeInput(d);
         return n ? [n] : [];
       }),
     ),
@@ -437,117 +331,6 @@ export async function addManualCandidates(db: Db, domains: string[]): Promise<nu
       .onConflictDoNothing();
   }
   return unique.length;
-}
-
-/** CDX `output=json&fl=url` bodies are newline-delimited `{"url": ...}`
- * objects (pywb); tolerate the Wayback-style array-of-arrays form too. */
-function cdxUrls(text: string): string[] {
-  const trimmed = text.trim();
-  if (!trimmed) return [];
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed.flatMap((row) =>
-        Array.isArray(row) && row.length > 0 && row[0] !== "url" ? [String(row[0])] : [],
-      );
-    }
-  } catch {
-    // not a single JSON document — fall through to NDJSON
-  }
-  const out: string[] = [];
-  const lineSchema = z.object({ url: z.string() });
-  for (const line of trimmed.split("\n")) {
-    const l = line.trim();
-    if (!l) continue;
-    try {
-      const parsed = lineSchema.safeParse(JSON.parse(l));
-      if (parsed.success) out.push(parsed.data.url);
-    } catch {
-      // skip malformed lines
-    }
-  }
-  return out;
-}
-
-/**
- * Best-effort crawl step for one host — never throws: on any error, log,
- * record nothing, don't advance the cursor.
- */
-export async function crawlHost(
-  db: Db,
-  fetcher: Fetcher,
-  crawlId: string,
-  cdxApi: string,
-  host: string,
-  platform: "greenhouse" | "lever" | "ashby",
-): Promise<number> {
-  try {
-    const cursorId = `${crawlId}:${host}`;
-    let [cursor] = await db
-      .select()
-      .from(discoveryCursor)
-      .where(eq(discoveryCursor.id, cursorId))
-      .limit(1);
-    if (cursor?.done) return 0;
-
-    let nextPage = cursor?.nextPage ?? 0;
-    let numPages = cursor?.numPages ?? null;
-    const inserted: string[] = [];
-
-    for (let p = 0; p < CRAWL_PAGES_PER_RUN; p++) {
-      const url = `${cdxApi}?url=${host}/*&output=json&fl=url&page=${nextPage}`;
-      const res = await fetcher(numPages === null ? `${url}&showNumPages=true` : url, {
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) return 0; // e.g. 504 — don't advance, don't throw
-      const body = numPages === null ? await res.json() : null;
-      if (numPages === null) {
-        const parsed = z.object({ pages: z.number().optional() }).safeParse(body);
-        numPages = parsed.success ? (parsed.data.pages ?? 0) : 0;
-        continue; // first call only fetched num_pages
-      }
-      for (const pageUrl of cdxUrls(await res.text())) {
-        const seg = new URL(pageUrl.startsWith("http") ? pageUrl : `https://${pageUrl}`).pathname
-          .split("/")
-          .filter(Boolean)[0];
-        if (!seg || IGNORED_BOARDS.has(seg) || !BOARD_RE.test(seg)) continue;
-        inserted.push(`${platform}:${seg}`);
-      }
-      nextPage++;
-    }
-
-    const now = new Date();
-    const statements: BatchItem<"sqlite">[] = [
-      ...[...new Set(inserted)].map((input) =>
-        db
-          .insert(discoveryCandidate)
-          .values({ id: `dsc_${nanoid(16)}`, origin: "crawl", input })
-          .onConflictDoNothing(),
-      ),
-      db
-        .insert(discoveryCursor)
-        .values({
-          id: cursorId,
-          nextPage,
-          numPages,
-          done: numPages !== null && nextPage >= numPages,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: discoveryCursor.id,
-          set: {
-            nextPage,
-            numPages,
-            done: numPages !== null && nextPage >= numPages,
-            updatedAt: now,
-          },
-        }),
-    ];
-    await db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
-    return new Set(inserted).size;
-  } catch {
-    return 0; // log + move on — caller logs
-  }
 }
 
 /** SimplifyJobs early-career listing feeds (spec §Discovery → Listings). */
@@ -590,7 +373,7 @@ export async function listingsCandidates(
     const statements: BatchItem<"sqlite">[] = [...inputs].map((input) =>
       db
         .insert(discoveryCandidate)
-        .values({ id: `dsc_${nanoid(16)}`, origin: "crawl", input })
+        .values({ id: `dsc_${nanoid(16)}`, origin: "listings", input })
         .onConflictDoNothing(),
     );
     for (const chunk of chunks(statements, 100)) {
@@ -601,22 +384,6 @@ export async function listingsCandidates(
   }
   return inputs.size;
 }
-
-/** Newest Common Crawl collection → { crawlId, cdxApi } or null on error. */
-export async function newestCrawl(fetcher: Fetcher) {
-  try {
-    const res = await fetcher("https://index.commoncrawl.org/collinfo.json", {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return null;
-    const list = (await res.json()) as { id: string; "cdx-api": string }[];
-    return list[0] ? { crawlId: list[0].id, cdxApi: list[0]["cdx-api"] } : null;
-  } catch {
-    return null;
-  }
-}
-
-export { CRAWL_HOSTS };
 
 /** Trial evaluation for sources that ingested successfully this run. */
 export async function trialEval(db: Db, sourceIds: string[]): Promise<void> {

@@ -1,7 +1,7 @@
 // GET + POST /api/discovery — candidate list and manual domain adds.
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
-import { requireAdmin, requireScope } from "../middleware/principal";
+import { requireAdmin } from "../middleware/principal";
 import { json } from "./errors";
 import { ErrorResponse } from "./schemas";
 import * as svc from "../services/discovery";
@@ -25,7 +25,7 @@ discoveryApi.openapi(
     path: "/discovery",
     tags: ["Discovery"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     request: { query: listQuery },
     responses: {
       200: { content: json(DiscoveryList), description: "Candidates" },
@@ -45,7 +45,7 @@ discoveryApi.openapi(
     path: "/discovery",
     tags: ["Discovery"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: { body: { content: json(DiscoveryAdd), required: true } },
     responses: {
       200: { content: json(DiscoveryAddResult), description: "Added count" },

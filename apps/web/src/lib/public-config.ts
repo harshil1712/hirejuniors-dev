@@ -1,34 +1,19 @@
 import { useEffect, useState } from "react";
 
 export interface PublicConfig {
-  googleEnabled: boolean;
   turnstileSiteKey: string;
-  signupEnabled: boolean;
 }
 
-/** "Feature off" safe path until the response arrives. */
-const DEFAULTS: PublicConfig = { googleEnabled: false, turnstileSiteKey: "", signupEnabled: false };
+const DEFAULTS: PublicConfig = { turnstileSiteKey: "" };
 
 let resolved: PublicConfig | null = null;
 let pending: Promise<PublicConfig> | null = null;
 
 function load(): Promise<PublicConfig> {
   pending ??= fetch("/api/public-config")
-    .then((r) =>
-      r.ok
-        ? (r.json() as Promise<{
-            googleEnabled?: boolean;
-            turnstileSiteKey?: string;
-            signupEnabled?: boolean;
-          }>)
-        : null,
-    )
+    .then((r) => (r.ok ? (r.json() as Promise<{ turnstileSiteKey?: string }>) : null))
     .then((data) => {
-      resolved = {
-        googleEnabled: Boolean(data?.googleEnabled),
-        turnstileSiteKey: data?.turnstileSiteKey ?? "",
-        signupEnabled: data?.signupEnabled === undefined ? true : Boolean(data?.signupEnabled),
-      };
+      resolved = { turnstileSiteKey: data?.turnstileSiteKey ?? "" };
       return resolved;
     })
     .catch(() => {

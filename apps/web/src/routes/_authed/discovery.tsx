@@ -88,7 +88,7 @@ function Discovery() {
       />
 
       <LayerCard>
-        <LayerCard.Secondary>Add domains</LayerCard.Secondary>
+        <LayerCard.Secondary>Add domains or board URLs</LayerCard.Secondary>
         <LayerCard.Primary>
           <form
             className="flex flex-wrap items-end gap-3"
@@ -136,7 +136,7 @@ function Discovery() {
           {rows.length === 0 ? (
             <Empty
               title="No candidates"
-              description="Queue domains above, or wait for the weekly crawl."
+              description="Queue domains or board URLs above, or wait for the weekly run."
             />
           ) : (
             <Table layout="fixed" className="min-w-[960px]">

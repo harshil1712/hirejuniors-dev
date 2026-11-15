@@ -3,28 +3,20 @@ import { useState } from "react";
 import { Banner, Button, Input, Text } from "@cloudflare/kumo";
 import { CheckCircle } from "@phosphor-icons/react";
 import { authClient } from "../lib/auth-client";
-import { usePublicConfig } from "../lib/public-config";
 import { authErrorFields } from "../lib/auth-errors";
 import { useCaptchaForm } from "../lib/use-captcha-form";
 import AuthCard from "../components/auth-card";
 import { AuthLink } from "../components/auth-link";
 import { FormError } from "../components/form-error";
-import { GoogleSignInButton } from "../components/google-sign-in";
 import { PasswordInput } from "../components/password-input";
 
-type Notice = "password-reset" | "account-deleted";
-
-const NOTICES: Record<Notice, string> = {
+const NOTICES = {
   "password-reset": "Password updated. Sign in with your new password.",
-  "account-deleted": "Your account has been deleted.",
-};
+} as const;
 
 export const Route = createFileRoute("/sign-in")({
   validateSearch: (search: { notice?: string }) => ({
-    notice:
-      search.notice === "password-reset" || search.notice === "account-deleted"
-        ? search.notice
-        : undefined,
+    notice: search.notice === "password-reset" ? search.notice : undefined,
   }),
   component: SignIn,
   beforeLoad: async () => {
@@ -36,7 +28,7 @@ export const Route = createFileRoute("/sign-in")({
 function SignIn() {
   const navigate = useNavigate();
   const { notice } = Route.useSearch();
-  const { signupEnabled } = usePublicConfig();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -52,11 +44,7 @@ function SignIn() {
       title="Sign in"
       footer={
         <Text variant="secondary" size="sm">
-          {signupEnabled && (
-            <>
-              New here? <AuthLink to="/sign-up">Create an account</AuthLink>
-            </>
-          )}
+          New here? <AuthLink to="/sign-up">Create an account</AuthLink>
         </Text>
       }
     >
@@ -66,7 +54,7 @@ function SignIn() {
           size="sm"
           variant="secondary"
           icon={<CheckCircle weight="fill" size={16} aria-hidden />}
-          description={NOTICES[notice as Notice]}
+          description={NOTICES[notice as keyof typeof NOTICES]}
         />
       )}
       <form onSubmit={form.onSubmit} className="flex w-full flex-col gap-4">
@@ -118,7 +106,6 @@ function SignIn() {
           Sign in
         </Button>
       </form>
-      <GoogleSignInButton />
     </AuthCard>
   );
 }

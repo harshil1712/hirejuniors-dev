@@ -1,6 +1,6 @@
 // Per-source ingest: fetch → shrink guard → pre-filter → upsert → feed diff.
 // Spec: docs/specs/ingest.md §Feed diff and §Change detection.
-import { and, eq, ne, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { ingestRun, job, source, sourceRun } from "@hirejuniors/db/schema";
@@ -72,7 +72,6 @@ export async function upsertListings(
       externalId: job.externalId,
       status: job.status,
       retireReason: job.retireReason,
-      missedRuns: job.missedRuns,
       contentHash: job.contentHash,
       classifiedBy: job.classifiedBy,
       validThrough: job.validThrough,
@@ -91,19 +90,6 @@ export async function upsertListings(
     seen.add(l.externalId);
 
     const prev = byExternal.get(l.externalId);
-    if (prev && l.reSeen) {
-      // careers_page re-seen link — stamp only; stored fields/contentHash
-      // stand (no page was fetched).
-      counts.updated++;
-      statements.push(
-        db
-          .update(job)
-          .set({ lastSeenAt: now, missedRuns: 0, updatedAt: now })
-          .where(eq(job.id, prev.id)),
-      );
-      continue;
-    }
-
     const loc = parseLocation(l.locationRaw, l.countryHint, l.workplaceHint);
     const hash = await contentHash(l);
     const fields = {
@@ -121,7 +107,6 @@ export async function upsertListings(
       sourceUpdatedAt: l.updatedAt ?? null,
       contentHash: hash,
       lastSeenAt: now,
-      missedRuns: 0,
       updatedAt: now,
     };
 
@@ -158,10 +143,7 @@ export async function upsertListings(
       // sighting so it isn't counted missing (spec §Expiry).
       counts.updated++;
       statements.push(
-        db
-          .update(job)
-          .set({ lastSeenAt: now, missedRuns: 0, updatedAt: now })
-          .where(eq(job.id, prev.id)),
+        db.update(job).set({ lastSeenAt: now, updatedAt: now }).where(eq(job.id, prev.id)),
       );
     } else if (prev.status === "retired") {
       // Reappeared in the feed → reactivated for re-classification.
@@ -202,33 +184,22 @@ export async function upsertListings(
     }
   }
 
-  // Feed diff — retire at the platform's miss threshold: 1 for complete
-  // JSON feeds, 2 for careers_page (rendered listings vary between loads).
-  // Reached only when the fetch + parse fully succeeded and passed the
-  // shrink guard.
-  const missThreshold = src.platform === "careers_page" ? 2 : 1;
+  // Feed diff — a stored job missing from a fully-successful feed retires
+  // after one run (reached only past the shrink guard).
   for (const prev of existing) {
     if (prev.status === "retired" || seen.has(prev.externalId)) continue;
-    const missedRuns = prev.missedRuns + 1;
-    if (missedRuns >= missThreshold) {
-      counts.retired++;
-      statements.push(
-        db
-          .update(job)
-          .set({
-            missedRuns,
-            status: "retired",
-            retiredAt: now,
-            retireReason: "missing_from_feed",
-            updatedAt: now,
-          })
-          .where(eq(job.id, prev.id)),
-      );
-    } else {
-      statements.push(
-        db.update(job).set({ missedRuns, updatedAt: now }).where(eq(job.id, prev.id)),
-      );
-    }
+    counts.retired++;
+    statements.push(
+      db
+        .update(job)
+        .set({
+          status: "retired",
+          retiredAt: now,
+          retireReason: "missing_from_feed",
+          updatedAt: now,
+        })
+        .where(eq(job.id, prev.id)),
+    );
   }
 
   for (const chunk of chunks(statements, 25)) {
@@ -268,22 +239,6 @@ export async function ingestSource(
   const startedAt = new Date();
   const row = await sourceWithCompany(db, sourceId);
   if (!row) throw new Error(`source ${sourceId} not found`);
-  if (row.source.platform === "careers_page") {
-    // The adapter re-sees stored links without fetching their pages and
-    // caps new page fetches at 30/run (spec §Careers-page ingest). Retired
-    // rows are excluded unless manually retired — a reappearing link must
-    // reactivate through the normal upsert path.
-    const stored = await db
-      .select({ externalId: job.externalId })
-      .from(job)
-      .where(
-        and(
-          eq(job.sourceId, sourceId),
-          or(ne(job.status, "retired"), eq(job.retireReason, "manual")),
-        ),
-      );
-    ctx.knownExternalIds = new Set(stored.map((j) => j.externalId));
-  }
   const listings = await adapterFor(row.source.platform).fetchListings(ctx, row.source);
 
   // Shrink guard — runs before upsert so a bad feed can't retire anything.

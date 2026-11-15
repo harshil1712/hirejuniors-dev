@@ -13,7 +13,6 @@
     "format": "vp check --fix"
   },
   "dependencies": {
-    "@better-auth/api-key": "1.7.16",
     "@cloudflare/kumo": "2.15.0",
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@fontsource-variable/martian-mono": "^5.3.0",
@@ -22,7 +21,6 @@
     "@hirejuniors/db": "workspace:*",
     "@hirejuniors/jobs": "workspace:*",
     "@hono/zod-openapi": "1.6.3",
-    "@modelcontextprotocol/server": "2.3.1",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-router": "1.170.46",
     "@vitejs/plugin-react": "6.1.2",
@@ -39,7 +37,6 @@
     "@cloudflare/vite-plugin": "1.65.0",
     "@cloudflare/vitest-plugin": "1.4.7",
     "@cloudflare/workers-types": "5.20261023.1",
-    "@modelcontextprotocol/client": "2.3.1",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/router-plugin": "1.168.48",
     "@types/better-sqlite3": "9.6.0",

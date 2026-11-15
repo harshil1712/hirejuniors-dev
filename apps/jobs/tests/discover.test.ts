@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { discoveryCandidate, source } from "@hirejuniors/db/schema";
-import { crawlHost, discoverStep, listingsCandidates, normalizeDomain } from "../src/discover";
+import { discoverStep, listingsCandidates, normalizeInput } from "../src/discover";
 import { db, migrate, seedCompany, seedSource } from "./helpers";
 
 beforeAll(migrate);
@@ -36,8 +36,31 @@ const ashbyOk = () =>
     status: 200,
     headers: { "content-type": "application/json" },
   });
+const jsonRes = (body: string) =>
+  new Response(body, {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+const greenhouseJobs = (n: number) =>
+  jsonRes(
+    JSON.stringify({
+      jobs: Array.from({ length: n }, (_, i) => ({
+        id: i + 1,
+        title: "x",
+        absolute_url: `https://x.test/${i}`,
+      })),
+    }),
+  );
+const ashbyJobs = (n: number) =>
+  jsonRes(JSON.stringify({ jobs: Array.from({ length: n }, (_, i) => ({ id: `j${i}` })) }));
+const page = () => new Response("<html>no boards here</html>", { status: 200 });
 
-async function cand(id: string, input: string, origin: "manual" | "crawl" = "manual", over = {}) {
+async function cand(
+  id: string,
+  input: string,
+  origin: "manual" | "listings" = "manual",
+  over = {},
+) {
   await db()
     .insert(discoveryCandidate)
     .values({ id, origin, input, status: "queued", ...over });
@@ -46,12 +69,18 @@ async function getCand(id: string) {
   return (await db().select().from(discoveryCandidate).where(eq(discoveryCandidate.id, id)))[0];
 }
 
-describe("normalizeDomain", () => {
-  it("validates hostnames", () => {
-    expect(normalizeDomain("Stripe.com")).toBe("stripe.com");
-    expect(normalizeDomain("https://figma.com/careers")).toBe("figma.com");
-    expect(normalizeDomain("not a domain")).toBeNull();
-    expect(normalizeDomain("nodot")).toBeNull();
+describe("normalizeInput", () => {
+  it("domains → bare lower-case host; ATS URLs → platform:board", () => {
+    expect(normalizeInput("Stripe.com")).toBe("stripe.com");
+    expect(normalizeInput("figma.com/careers")).toBe("figma.com");
+    expect(normalizeInput("https://boards.greenhouse.io/acme")).toBe("greenhouse:acme");
+    expect(normalizeInput("https://jobs.lever.co/beta/jobs/123")).toBe("lever:beta");
+    expect(normalizeInput("https://jobs.ashbyhq.com/gamma")).toBe("ashby:gamma");
+    // Board slugs are case-sensitive.
+    expect(normalizeInput("https://jobs.ashbyhq.com/Notion/abc")).toBe("ashby:Notion");
+    expect(normalizeInput("https://example.com/about")).toBeNull();
+    expect(normalizeInput("not a domain")).toBeNull();
+    expect(normalizeInput("nodot")).toBeNull();
   });
 });
 
@@ -102,21 +131,6 @@ describe("discoverStep", () => {
     expect(c.platform).toBe("ashby");
   });
 
-  it("slug-guess fallback order greenhouse→lever→ashby", async () => {
-    await cand("dsc_d1", "probeonly.io");
-    const f = fetcher({
-      "probeonly.io": new Response("<html>no ats links</html>", {
-        headers: { "content-type": "text/html" },
-      }),
-      "api.lever.co/v0/postings/probeonly": leverOk(),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_d1");
-    expect(c.status).toBe("found");
-    expect(c.platform).toBe("lever");
-    expect(c.board).toBe("probeonly");
-  });
-
   it("no successful probe → not_found", async () => {
     await cand("dsc_e1", "noluck.io");
     const f = fetcher({
@@ -142,6 +156,65 @@ describe("discoverStep", () => {
     expect(c.attempts).toBe(1);
   });
 
+  it("domain guess: datadoghq.com → datadoghq + datadog; GH datadog named 'Datadog' 5 jobs → found", async () => {
+    await cand("dsc_gu1", "datadoghq.com");
+    const f = fetcher({
+      "datadoghq.com": page(),
+      // boards-api probes for the wrong guess 404 by default; datadog answers
+      "boards-api.greenhouse.io/v1/boards/datadog/jobs": greenhouseJobs(5),
+      "boards-api.greenhouse.io/v1/boards/datadog": jsonRes(JSON.stringify({ name: "Datadog" })),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_gu1");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("greenhouse");
+    expect(c.board).toBe("datadog");
+  });
+
+  it("domain guess: GH name mismatch ('Wise Worksite Field Sales') → not_found", async () => {
+    await cand("dsc_gu2", "wise.com");
+    const f = fetcher({
+      "wise.com": page(),
+      "boards-api.greenhouse.io/v1/boards/wise/jobs": greenhouseJobs(3),
+      "boards-api.greenhouse.io/v1/boards/wise": jsonRes(
+        JSON.stringify({ name: "Wise Worksite Field Sales" }),
+      ),
+    });
+    await discoverStep(db(), { fetcher: f });
+    expect((await getCand("dsc_gu2")).status).toBe("not_found");
+  });
+
+  it("domain guess: most jobs wins — GH ramp 1 job vs Ashby ramp 180 → ashby", async () => {
+    await cand("dsc_gu3", "ramp.com");
+    const f = fetcher({
+      "ramp.com": page(),
+      "boards-api.greenhouse.io/v1/boards/ramp/jobs": greenhouseJobs(1),
+      "boards-api.greenhouse.io/v1/boards/ramp": jsonRes(JSON.stringify({ name: "RAMP" })),
+      "api.ashbyhq.com/posting-api/job-board/ramp": ashbyJobs(180),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_gu3");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("ashby");
+    expect(c.board).toBe("ramp");
+  });
+
+  it("domain guess: GH board name 'Canonical - Jobs' normalises to the guess", async () => {
+    await cand("dsc_gu4", "canonical.com");
+    const f = fetcher({
+      "canonical.com": page(),
+      "boards-api.greenhouse.io/v1/boards/canonical/jobs": greenhouseJobs(7),
+      "boards-api.greenhouse.io/v1/boards/canonical": jsonRes(
+        JSON.stringify({ name: "Canonical - Jobs" }),
+      ),
+    });
+    await discoverStep(db(), { fetcher: f });
+    const c = await getCand("dsc_gu4");
+    expect(c.status).toBe("found");
+    expect(c.platform).toBe("greenhouse");
+    expect(c.board).toBe("canonical");
+  });
+
   it("duplicate (platform,board) source → duplicate + source_id", async () => {
     await seedCompany({ id: "cmp_dup01", slug: "dupco", name: "Dup Co" });
     const src = await seedSource({
@@ -150,7 +223,7 @@ describe("discoverStep", () => {
       platform: "lever",
       board: "dupco",
     });
-    await cand("dsc_g1", "lever:dupco", "crawl");
+    await cand("dsc_g1", "lever:dupco", "listings");
     await discoverStep(db(), { fetcher: fetcher({ "api.lever.co/v0/postings/dupco": leverOk() }) });
     const c = await getCand("dsc_g1");
     expect(c.status).toBe("duplicate");
@@ -159,7 +232,7 @@ describe("discoverStep", () => {
 
   it("company slug collision → -2", async () => {
     await seedCompany({ id: "cmp_gh01", slug: "gh-co", name: "GH Co" });
-    await cand("dsc_h1", "greenhouse:ghco", "crawl");
+    await cand("dsc_h1", "greenhouse:ghco", "listings");
     await discoverStep(db(), {
       fetcher: fetcher({ "boards-api.greenhouse.io/v1/boards/ghco/jobs": greenhouseOk() }),
     });
@@ -168,60 +241,6 @@ describe("discoverStep", () => {
     const [s] = await db().select().from(source).where(eq(source.id, c.sourceId!));
     expect(s.origin).toBe("discovered");
     expect(s.trial).toBe(true);
-  });
-});
-
-describe("crawlHost", () => {
-  const CDX = "https://index.commoncrawl.org/CC-MAIN-TEST-index";
-  it("parses urls → candidates; cursor advances on success", async () => {
-    const f = fetcher({
-      showNumPages: new Response(JSON.stringify({ pages: 1 }), {
-        headers: { "content-type": "application/json" },
-      }),
-      "index.commoncrawl.org": new Response(
-        JSON.stringify([["url"], ["boards.greenhouse.io/newco"], ["boards.greenhouse.io/embed"]]),
-        { headers: { "content-type": "application/json" } },
-      ),
-    });
-    const n = await crawlHost(db(), f, "CC-MAIN-TEST", CDX, "boards.greenhouse.io", "greenhouse");
-    expect(n).toBe(1);
-    const rows = await db()
-      .select()
-      .from(discoveryCandidate)
-      .where(eq(discoveryCandidate.input, "greenhouse:newco"));
-    expect(rows).toHaveLength(1);
-  });
-
-  it("tolerates the Wayback array-of-arrays body", async () => {
-    const f = fetcher({
-      showNumPages: new Response(JSON.stringify({ pages: 1 }), {
-        headers: { "content-type": "application/json" },
-      }),
-      "index.commoncrawl.org": new Response(
-        JSON.stringify([["url"], ["boards.greenhouse.io/arrayco"]]),
-        { headers: { "content-type": "application/json" } },
-      ),
-    });
-    await crawlHost(db(), f, "CC-MAIN-ARR", CDX, "boards.greenhouse.io", "greenhouse");
-    const rows = await db()
-      .select()
-      .from(discoveryCandidate)
-      .where(eq(discoveryCandidate.input, "greenhouse:arrayco"));
-    expect(rows).toHaveLength(1);
-  });
-
-  it("504 → no throw, no candidates, cursor not advanced", async () => {
-    const f = fetcher({
-      "index.commoncrawl.org": new Response(null, { status: 504 }),
-    });
-    await expect(
-      crawlHost(db(), f, "CC-MAIN-TEST", CDX, "jobs.lever.co", "lever"),
-    ).resolves.not.toThrow();
-    const rows = await db()
-      .select()
-      .from(discoveryCandidate)
-      .where(eq(discoveryCandidate.input, "lever:anything"));
-    expect(rows).toHaveLength(0);
   });
 });
 
@@ -255,18 +274,6 @@ describe("manual flow — URL order and outcomes", () => {
     expect(c.board).toBe("subco");
   });
 
-  it("every page fetch fails but slug guess finds a board → found", async () => {
-    await cand("dsc_m3", "guessco.dev");
-    const f = fetcher({
-      "guessco.dev": "error", // covers /careers, /jobs, apex
-      "boards-api.greenhouse.io/v1/boards/guessco": greenhouseOk(),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_m3");
-    expect(c.status).toBe("found");
-    expect(c.board).toBe("guessco");
-  });
-
   it("every fetch AND every probe throws → failed, attempts incremented", async () => {
     await cand("dsc_m4", "alldown.dev");
     const f = fetcher({
@@ -288,9 +295,11 @@ describe("manual flow — URL order and outcomes", () => {
     expect((await getCand("dsc_m5")).status).toBe("not_found");
   });
 
-  it("manual candidates probe before older crawl ones (limit 1)", async () => {
-    await cand("dsc_old_crawl", "lever:older", "crawl");
-    // manual created after the crawl candidate
+  it("manual candidates probe before older listings ones (limit 1)", async () => {
+    // Clear leftovers queued/failed by earlier tests in the shared DB.
+    await db().update(discoveryCandidate).set({ status: "found" });
+    await cand("dsc_old_listing", "lever:older", "listings");
+    // manual created after the listings candidate
     await new Promise((r) => setTimeout(r, 5));
     await cand("dsc_new_manual", "first.dev", "manual");
     const f = fetcher({
@@ -303,119 +312,6 @@ describe("manual flow — URL order and outcomes", () => {
     await discoverStep(db(), { fetcher: f }, 1);
     const manual = await getCand("dsc_new_manual");
     expect(manual.attempts).toBe(1); // probed first despite being newer
-  });
-});
-
-describe("slugGuesses (spec §Discovery step 3)", () => {
-  it("label itself, then suffix-stripped variant", async () => {
-    const { slugGuesses } = await import("../src/discover");
-    expect(slugGuesses("datadoghq.com")).toEqual(["datadoghq", "datadog"]);
-    expect(slugGuesses("acmeinc.com")).toEqual(["acmeinc", "acme"]);
-    expect(slugGuesses("stripe.com")).toEqual(["stripe"]);
-    expect(slugGuesses("hq.com")).toEqual(["hq"]); // no empty/short guess
-    expect(slugGuesses("myapp.io")).toEqual(["myapp"]); // "my" too short (needs > suffix+2)
-  });
-
-  it("suffix variant found via probe: datadoghq → datadog", async () => {
-    await cand("dsc_sg1", "datadoghq.dev");
-    const f = fetcher({
-      "datadoghq.dev": "error",
-      "boards-api.greenhouse.io/v1/boards/datadog/jobs": greenhouseOk(),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_sg1");
-    expect(c.status).toBe("found");
-    expect(c.board).toBe("datadog");
-    expect(c.platform).toBe("greenhouse");
-  });
-});
-
-describe("slug-guess plausibility (spec §Discovery step 3)", () => {
-  const ghJobs = (n: number) =>
-    new Response(
-      JSON.stringify({
-        jobs: Array.from({ length: n }, (_, i) => ({ id: i + 1, title: "t", absolute_url: "x" })),
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-  const ghMeta = (name: string) =>
-    new Response(JSON.stringify({ name }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  const ashbyJobs = (n: number) =>
-    new Response(JSON.stringify({ jobs: Array.from({ length: n }, (_, i) => ({ id: `j${i}` })) }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-
-  it("wise.com: Greenhouse 'Wise Worksite Field Sales' ≠ 'wise' → not_found", async () => {
-    await cand("dsc_p1", "wise.dev");
-    const f = fetcher({
-      "wise.dev": "error",
-      "boards-api.greenhouse.io/v1/boards/wise/jobs": ghJobs(19),
-      "boards-api.greenhouse.io/v1/boards/wise": ghMeta("Wise Worksite Field Sales"),
-    });
-    await discoverStep(db(), { fetcher: f });
-    expect((await getCand("dsc_p1")).status).toBe("not_found");
-  });
-
-  it("ramp.com: Greenhouse 'RAMP' 1 job + Ashby 180 → ashby wins on jobCount", async () => {
-    await cand("dsc_p2", "ramp.dev");
-    const f = fetcher({
-      "ramp.dev": "error",
-      "boards-api.greenhouse.io/v1/boards/ramp/jobs": ghJobs(1),
-      "boards-api.greenhouse.io/v1/boards/ramp": ghMeta("RAMP"),
-      "api.ashbyhq.com/posting-api/job-board/ramp": ashbyJobs(180),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_p2");
-    expect(c.status).toBe("found");
-    expect(c.platform).toBe("ashby");
-    expect(c.board).toBe("ramp");
-  });
-
-  it("stripe.com: Greenhouse 'Stripe' 786 jobs → found greenhouse", async () => {
-    await cand("dsc_p3", "stripe.dev");
-    const f = fetcher({
-      "stripe.dev": "error",
-      "boards-api.greenhouse.io/v1/boards/stripe/jobs": ghJobs(786),
-      "boards-api.greenhouse.io/v1/boards/stripe": ghMeta("Stripe"),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_p3");
-    expect(c.status).toBe("found");
-    expect(c.platform).toBe("greenhouse");
-    expect(c.board).toBe("stripe");
-  });
-
-  it("board with 0 jobs is discarded", async () => {
-    await cand("dsc_p4", "emptyco.dev");
-    const f = fetcher({
-      "emptyco.dev": "error",
-      "boards-api.greenhouse.io/v1/boards/emptyco/jobs": ghJobs(0),
-      "api.lever.co/v0/postings/emptyco": leverOk(),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_p4");
-    expect(c.status).toBe("found");
-    expect(c.platform).toBe("lever");
-  });
-
-  it("page link to a board with a different name is still accepted", async () => {
-    await cand("dsc_p5", "linkco.dev");
-    const f = fetcher({
-      "linkco.dev/careers": new Response(
-        '<a href="https://boards.greenhouse.io/acmeats">jobs</a>',
-        { headers: { "content-type": "text/html" } },
-      ),
-      "boards-api.greenhouse.io/v1/boards/acmeats/jobs": ghJobs(3),
-      "boards-api.greenhouse.io/v1/boards/acmeats": ghMeta("Different Name Ltd"),
-    });
-    await discoverStep(db(), { fetcher: f });
-    const c = await getCand("dsc_p5");
-    expect(c.status).toBe("found");
-    expect(c.board).toBe("acmeats");
   });
 });
 
@@ -432,7 +328,7 @@ describe("listingsCandidates", () => {
     const rows = await db()
       .select({ input: discoveryCandidate.input, origin: discoveryCandidate.origin })
       .from(discoveryCandidate)
-      .where(eq(discoveryCandidate.origin, "crawl"));
+      .where(eq(discoveryCandidate.origin, "listings"));
     return rows;
   }
 

@@ -21,7 +21,7 @@ const MESSAGES = {
   INVALID_TOKEN: RESET_LINK_INVALID,
   TOKEN_EXPIRED: RESET_LINK_INVALID,
   SESSION_EXPIRED: "For your security, sign out and sign in again, then retry.",
-  CREDENTIAL_ACCOUNT_NOT_FOUND: "This account signs in with Google, so it has no password.",
+  CREDENTIAL_ACCOUNT_NOT_FOUND: "This account has no password.",
   EMAIL_ALREADY_VERIFIED: "This email is already verified. You can sign in.",
   MISSING_RESPONSE: "Complete the security check, then try again.",
   VERIFICATION_FAILED: "The security check didn't pass. Try again.",

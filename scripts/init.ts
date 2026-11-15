@@ -40,15 +40,7 @@ const OLD = {
   productName: PROJECT.productName,
   emailFrom: PROJECT.emailFrom,
   appSubdomain: PROJECT.appSubdomain,
-  apiKeyPrefix: PROJECT.apiKeyPrefix,
-  api: PROJECT.api,
 };
-
-// API key prefix is derived from the new name: first two alphanumeric chars.
-const apiKeyPrefix = `${name
-  .replace(/[^a-z0-9]/gi, "")
-  .slice(0, 2)
-  .toLowerCase()}_`;
 
 const files: { path: string; next: string }[] = [];
 const changed: string[] = [];
@@ -79,11 +71,6 @@ export const PROJECT = {
   emailFrom: "noreply@${domain}",
   /** User-facing support address shown in auth emails and the footer. */
   supportEmail: "support@${domain}",
-  /** API key prefix — keys are shown once and identified in lists by it. */
-  apiKeyPrefix: "${apiKeyPrefix}",
-  /** Agent API (/api/v1 + /mcp). publicSpec exposes openapi.json + discovery
-   * without a key; rateLimitPerMinute is the per-key ceiling. */
-  api: { publicSpec: ${OLD.api.publicSpec}, rateLimitPerMinute: ${OLD.api.rateLimitPerMinute} },
 } as const;
 
 export const APP_DOMAIN = \`\${PROJECT.appSubdomain}.\${PROJECT.domain}\`;
@@ -142,7 +129,6 @@ const replacements: [RegExp, string][] = [
   ],
   [new RegExp(OLD.domain.replace(/\./g, "\\."), "g"), domain],
   [new RegExp(OLD.emailFrom, "g"), `noreply@${domain}`],
-  [new RegExp(`\\b${OLD.apiKeyPrefix}`, "g"), apiKeyPrefix],
   [new RegExp(OLD.productName, "g"), productName],
   [new RegExp(`\\b${OLD.name}\\b`, "g"), name],
 ];

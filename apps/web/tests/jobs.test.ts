@@ -5,7 +5,6 @@ import {
   migrate,
   verifiedSessionCookie,
   adminSessionCookie,
-  makeKey,
   seedCompany,
   seedSource,
   seedJob,
@@ -22,7 +21,6 @@ interface JobDto {
   status: string;
   level: string;
   countryCode: string | null;
-  missedRuns: number;
   retiredAt: string | null;
   retireReason: string | null;
   company: { id: string; name: string; slug: string };
@@ -89,7 +87,7 @@ function session(method: string, path: string, body?: RequestBody) {
 }
 
 describe("jobs api", () => {
-  it("401 unauth; 403 non-admin session; 403 key without jobs:read; key with read OK", async () => {
+  it("401 unauth; 403 non-admin session; admin session OK", async () => {
     const anon = await SELF.fetch("https://x/api/jobs");
     expect(anon.status).toBe(401);
 
@@ -98,27 +96,8 @@ describe("jobs api", () => {
     expect(forbidden.status).toBe(403);
     expect((await forbidden.json<Envelope>()).error.code).toBe("forbidden");
 
-    // A read-scope key works on reads; the same key on a write →
-    // insufficient_scope. A non-admin's key with the scope → forbidden.
-    const readKey = await makeKey(admin, ["jobs:read"]);
-    const ok = await req(readKey, "GET", "/api/v1/jobs", undefined, "bearer");
+    const ok = await req(admin, "GET", "/api/jobs");
     expect(ok.status).toBe(200);
-
-    const writeOnly = await req(
-      readKey,
-      "PATCH",
-      "/api/v1/jobs/job_nope",
-      { status: "retired" },
-      "bearer",
-    );
-    expect(writeOnly.status).toBe(403);
-    expect((await writeOnly.json<Envelope>()).error.code).toBe("insufficient_scope");
-
-    const nonAdminCookie = await verifiedSessionCookie(`na-${crypto.randomUUID()}@t.dev`);
-    const nonAdminKey = await makeKey(nonAdminCookie, ["jobs:read"]);
-    const na = await req(nonAdminKey, "GET", "/api/v1/jobs", undefined, "bearer");
-    expect(na.status).toBe(403);
-    expect((await na.json<Envelope>()).error.code).toBe("forbidden");
   });
 
   it("list: filters (status, level, country, q) and keyset pagination with no duplicates", async () => {
@@ -195,10 +174,10 @@ describe("jobs api", () => {
     expect(new Set(ids).size).toBe(2);
   });
 
-  it("PATCH retire → manual + retired_at; restore → active + missed_runs 0; 404 unknown id", async () => {
+  it("PATCH retire → manual + retired_at; restore → active; 404 unknown id", async () => {
     const { id: cid } = await seedCompany();
     const sid = await seedSource(cid);
-    const jid = await seedJob(sid, cid, { missedRuns: 1 });
+    const jid = await seedJob(sid, cid);
 
     const retired = await (
       await session("PATCH", `/api/jobs/${jid}`, { status: "retired" })
@@ -213,7 +192,6 @@ describe("jobs api", () => {
     expect(restored.data.status).toBe("active");
     expect(restored.data.retireReason).toBeNull();
     expect(restored.data.retiredAt).toBeNull();
-    expect(restored.data.missedRuns).toBe(0);
 
     const missing = await session("PATCH", "/api/jobs/job_nope", { status: "retired" });
     expect(missing.status).toBe(404);

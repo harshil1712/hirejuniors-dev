@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/runs";
-import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
 import { ErrorResponse, RunDetail, RunList, RunListQuery, RunTriggered } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
@@ -23,7 +23,7 @@ runsApi.openapi(
     path: "/runs",
     tags: ["Runs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     request: { query: RunListQuery },
     responses: {
       200: { content: json(RunList), description: "Page of ingest runs, latest first" },
@@ -44,7 +44,7 @@ runsApi.openapi(
     path: "/runs",
     tags: ["Runs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     responses: {
       202: { content: json(RunTriggered), description: "Ingest workflow started" },
       ...errors(401, 403, 503),
@@ -62,7 +62,7 @@ runsApi.openapi(
     path: "/runs/{id}",
     tags: ["Runs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     request: { params: idParam },
     responses: {
       200: { content: json(RunDetail), description: "The run, with per-source rows" },

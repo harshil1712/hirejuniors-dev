@@ -1,7 +1,7 @@
 // Junior-level classification — spec §Classification.
 // Word-boundary, case-insensitive keyword pre-filter, then a model decision
 // (clef-flash → clef escalation) for everything stored as pending.
-import { and, asc, eq, inArray, or, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, or, isNull, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { job, source } from "@hirejuniors/db/schema";
 import { chunks } from "@hirejuniors/db/queries";
@@ -147,14 +147,6 @@ export async function classifyStep(db: Db, ai: AiModels, limit = 20): Promise<Cl
         const ex = await extractForJob(db, ai, row, decided.salaryHints);
         counts.inputTokens += ex.inputTokens;
         Object.assign(set, ex.set);
-        if (ex.rejectedExperience) {
-          set.status = "rejected";
-          set.rejectReason = "experience";
-          set.descriptionHtml = null;
-          if (decided.outcome === "active") counts.classified--;
-          else counts.review--;
-          counts.rejected++;
-        }
       }
       if (decided.outcome === "rejected") set.descriptionHtml = null;
     }

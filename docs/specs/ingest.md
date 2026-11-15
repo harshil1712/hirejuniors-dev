@@ -25,14 +25,14 @@ Workflow in `apps/jobs`.
 ## Layout
 
 - `packages/db` (`@hirejuniors/db`) — Drizzle schema for `company`, `source`,
-  `job`, `ingest_run`, `source_run`, `discovery_candidate`,
-  `discovery_cursor` + relations, shared query helpers, and the single D1
-  migrations dir `packages/db/migrations`.
+  `job`, `ingest_run`, `source_run`, `discovery_candidate` + relations,
+  shared query helpers, and the single D1 migrations dir
+  `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — Worker exporting `IngestWorkflow`;
   `src/platforms/*` adapters, `src/classify.ts` (keyword pre-filter +
   model classification), `src/extract.ts` (Clairic), `src/discover.ts`,
   `src/location.ts`, `src/ingest.ts` (per-source upsert + feed diff),
-  `src/retire.ts` (expiry + link/page check), `src/ai.ts` (typed wrappers
+  `src/retire.ts` (expiry), `src/ai.ts` (typed wrappers
   over the AI binding). The Workflow class is thin glue over these functions.
 
 ## Schema (`packages/db`)
@@ -64,30 +64,26 @@ Unique `(platform, board)`.
   `review` = model unsure, waiting for the admin; `rejected` = classified as
   not early-career or not tech (kept so it isn't re-classified every week).
 - `level` becomes **nullable** (null while pending/rejected).
-- `retire_reason` enum adds **`closed_page`**.
+- `retire_reason` enum `missing_from_feed | expired | manual`.
 - New: `content_hash` text not null (see §Change detection),
   `classified_at` null, `classified_by` enum `rules | clef-flash | clef |
   admin` null, `classifier_confidence` real null, `reject_reason` enum
-  `not_early_career | not_tech | experience | admin` null, `review_reason`
-  text null, `min_years_experience` integer null, `salary_min` integer null,
+  `not_early_career | not_tech | admin` null, `review_reason`
+  text null, `salary_min` integer null,
   `salary_max` integer null, `salary_currency` text null (ISO 4217),
-  `salary_period` enum `HOUR | WEEK | MONTH | YEAR` null, `graduation_year`
-  integer null, `extracted_at` null.
+  `salary_period` enum `HOUR | WEEK | MONTH | YEAR` null, `extracted_at` null.
 - Index `(status, classified_at)` added for the classify queue.
 
 `ingest_run` — add totals `classified, rejected, review, discovered`
 integers default 0 and `ai_input_tokens` integer default 0.
 
-`discovery_candidate` (new) — `id` (`dsc_`), `origin` enum `manual | crawl`,
-`input` text (manual: bare domain like `stripe.com`; crawl:
+`discovery_candidate` (new) — `id` (`dsc_`), `origin` enum `manual |
+listings`, `input` text (manual: bare domain like `stripe.com` or
+`<platform>:<board>` for a pasted board URL; listings:
 `<platform>:<board>`), `status` enum `queued | found | not_found | duplicate |
 failed` default `queued`, `platform` null, `board` null, `source_id` →
 source null (set null), `error` null, `attempts` integer default 0,
 `created_at`, `updated_at`. Unique `(input)`.
-
-`discovery_cursor` (new) — `id` text pk = `<crawl-id>:<host>` (e.g.
-`CC-MAIN-2026-43:jobs.lever.co`), `next_page` integer default 0,
-`num_pages` integer null, `done` boolean default false, `updated_at`.
 
 Seed (`0005`): the two existing sources get `origin = 'seed'`.
 
@@ -135,96 +131,50 @@ rows with `origin = 'manual'`. For each queued manual candidate:
    - Lever: `jobs\.lever\.co/([A-Za-z0-9_.-]+)`
    - Ashby: `jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)`
      Ignore the captured board if it is one of `embed`, `api`, `v1`, `jobs`.
-3. If no link is found, guess boards from the first label of `d`: the label
-   itself (e.g. `stripe` from `stripe.com`), then — if the label ends with
-   `hq`, `app`, `inc`, `labs`, `io` or `jobs` and is at least 3 characters
-   longer than that suffix — the label without the suffix (e.g. `datadog`
-   from `datadoghq.com`). For each guess, probe **all three** platforms
-   (cheap GETs) and keep only plausible matches:
-   - a Greenhouse result whose board `name` is known must equal the guess
-     after normalising both (lower-case, keep `a-z0-9` only, drop a trailing
-     `inc`/`ltd`/`careers`/`jobs`); otherwise discard it (real run:
-     `wise.com` matched a Greenhouse board named "Wise Worksite Field
-     Sales");
-   - the board must list at least 1 job (`probe` returns `jobCount` from the
-     envelope).
+3. First successful `probe` → `found`.
+4. No link found → guess the board from the domain: `label` = first DNS
+   label, plus `label` without a trailing `hq` when ≥ 3 chars remain
+   (`datadoghq` → `datadog`). Probe every guess on Greenhouse, Lever and
+   Ashby; keep answers with ≥ 1 job, and drop a Greenhouse answer whose
+   board name — lower-cased, non-alphanumerics removed, one trailing
+   `inc|ltd|careers|jobs` removed — isn't equal to the guess (`wise` ≠
+   "Wise Worksite Field Sales"). The kept answer
+   with the most jobs → `found`; none → `not_found`. (Real run: careers
+   pages link to their own branded pages, so the link scan alone found 3
+   of 20 domains; with guessing, 13.)
+5. Network errors on every attempt → `failed` (retried next run while
+   `attempts < 3`).
 
-   Among the plausible matches across all guesses pick the one with the
-   **most jobs** (real run: `ramp.com` matched a 1-job Greenhouse board
-   "RAMP" before Ramp's 180-job Ashby board). Board links found on the page
-   (step 2) skip this check — the company's own page points at them.
+A pasted line that is a URL on a Greenhouse/Lever/Ashby host is stored
+normalised as `<platform>:<board>` (it dedupes with listings rows) and goes
+straight to `probe`, like a listings candidate.
 
-4. First successful `probe` → `found`. Network errors on every attempt →
-   `failed` (retried next run while `attempts < 3`).
-5. **Careers-page fallback.** No ATS board found, but one of the step-1 pages
-   rendered → run §Careers-page listing parse on it (first rendered page in
-   step-1 order). If it yields ≥ 1 job link → `found` with a
-   `careers_page` source (`board` = normalised listing URL, `config =
-   {"listingUrl": "<url>"}`). If it yields 0 job links, take the one-hop
-   choice below and, if a link is chosen, parse that page instead (and use
-   it as `listingUrl`). Still nothing → `not_found`.
-
-   One-hop choice: collect up to 40 same-site links from the page's
-   rendered Markdown, then one `clef-flash` call with `state` = the
-   numbered list `"{i}. {text} → {url}"` and the question:
-
-   ```json
-   {
-     "open_positions": {
-       "type": "choice",
-       "instructions": "Which link leads to the page that lists the company's open job positions?",
-       "criteria": {
-         "link_0": "...",
-         "link_1": "...",
-         "none": "None of these links lists open positions"
-       }
-     }
-   }
-   ```
-
-   where each `link_i` criterion is `"{text} → {url}"`. Accept the chosen
-   link if it isn't `none` and its probability ≥ 0.60.
-
-**Crawl (Common Crawl index).** Best-effort, never fails the run. Hosts:
-`boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`,
-`jobs.ashbyhq.com`. Use the newest collection from
-`https://index.commoncrawl.org/collinfo.json`. Per host, query
-`{cdx-api}?url={host}/*&output=json&fl=url&page={n}` (first call with
-`showNumPages=true` stores `num_pages`), resuming from `discovery_cursor`.
-Process at most **2 pages per host per run**. From each URL take the first
-path segment as the board (same ignore list as above, must match
-`^[A-Za-z0-9_.-]+$`), dedupe, and insert `discovery_candidate` rows
-`origin = 'crawl'`, `input = '<platform>:<board>'`, `INSERT OR IGNORE`.
-When a newer collection appears, start new cursors for it. The index
-returned 504s during design (2026-11-15), so every crawl call is wrapped:
-on error, log + record nothing + move on; the cursor is not advanced.
-
-**Listings (early-career job lists).** Common Crawl's index refused every
-connection in the real runs, so the dependable automatic source is the two
-community-maintained early-career lists, which link straight to ATS
+**Listings (early-career job lists).** The dependable automatic source is
+the two community-maintained early-career lists, which link straight to ATS
 postings:
 
 - `https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json`
 - `https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json`
 
 Each is a JSON array of `{ url, active, … }` (~13 MB). One step
-`discover:listings`, best-effort like the crawl: per list, fetch (30 s
+`discover:listings`, best-effort: per list, fetch (30 s
 timeout), parse tolerantly (array of objects with string `url` and optional
 boolean `active`; skip other rows), keep `active !== false`, run the same
-ATS patterns as step 1 over each `url`, and insert `origin = 'crawl'`,
+ATS patterns as step 1 over each `url`, and insert `origin = 'listings'`,
 `input = '<platform>:<board>'` rows with `INSERT OR IGNORE` (D1 batches of
 ≤ 100 statements). Only the board is taken; jobs still come from the
 platform API. Workday and other links are ignored. On any error, record
 nothing for that list and move on. In 2026-11 the lists held ~700 distinct
 Greenhouse/Lever/Ashby boards with active junior roles.
 
-Crawl and listings candidates skip steps 1–3 and go straight to `probe`.
+Listings and pasted board-URL candidates skip steps 1–2 and go straight
+to `probe`.
 
 **Creating the source.** On `found`: if `(platform, board)` already exists
 → candidate `duplicate` with `source_id` = existing. Otherwise insert
 `company` (name = probe `companyName` ?? title-cased board with `-`/`_` →
 space; slug = slugify(name), append `-2`, `-3`… on collision;
-`homepage_url = https://{d}` for manual, null for crawl) and `source`
+`homepage_url = https://{d}` for manual, null for listings) and `source`
 (`origin = 'discovered'`, `enabled = true`, `trial = true`,
 `include_all = false`, `config = '{}'`).
 
@@ -395,11 +345,6 @@ with `fields` exactly:
 
 ```json
 {
-  "min_years_experience": {
-    "type": "number",
-    "decimals": 0,
-    "instructions": "Minimum years of professional work experience required. Null if not stated."
-  },
   "salary_min": {
     "type": "number",
     "decimals": 0,
@@ -409,31 +354,17 @@ with `fields` exactly:
     "type": "number",
     "decimals": 0,
     "instructions": "Highest stated pay amount for this role, as a plain number. Same as the lowest if only one amount is given. Null if pay is not stated."
-  },
-  "application_deadline": {
-    "type": "date",
-    "instructions": "Last date applications are accepted. Null if not stated."
-  },
-  "graduation_year": {
-    "type": "number",
-    "decimals": 0,
-    "instructions": "Year candidates are expected to graduate. Null if not stated."
   }
 }
 ```
 
 Use a value only when it is non-null and its `confidence ≥ 0.80`, then apply
-these checks (failing values are dropped, not the job):
+this check (a failing value is dropped, not the job):
 
-- `min_years_experience` ∈ [0, 15]. If ≥ **3** → job becomes `rejected` /
-  `experience` (overrides the decision step).
 - Salary: persist `salary_min`, `salary_max`, `salary_currency`,
   `salary_period` only if min and max are present, `0 < min ≤ max`,
   `max ≤ 20 × min`, currency ∉ {`other`, `none`} with probability ≥ 0.70,
   and period ≠ `none` with probability ≥ 0.70. Otherwise all four null.
-- `application_deadline`: must be after `posted_at ?? first_seen_at` and
-  within 365 days of it → set `valid_through` only if it is null.
-- `graduation_year` ∈ [current year − 1, current year + 4].
 
 Set `extracted_at`. Any Clairic error → log, leave fields null, continue
 (never throws the step). Tokens from every model call are summed into
@@ -447,14 +378,8 @@ returned 0 while the source has ≥ 1 `active` job → throw
 `"feed shrank from X to Y"` (treated as a failed fetch: no diff). On success
 set `last_fetched`.
 
-**Missing from feed.** Jobs of the source in `active` or `review` not seen
-in a successful fetch get `missed_runs + 1` and are retired
-`missing_from_feed` when `missed_runs` reaches the threshold: **1 for JSON
-platforms** (greenhouse, lever, ashby, amazon_jobs — their feeds are
-complete), **2 for `careers_page`** (rendered pages vary between loads —
-the real run saw a 6-link listing render with 5 links minutes later).
-`pending` and `rejected` jobs not seen are set `retired` /
-`missing_from_feed` at the same threshold, so they leave the queue.
+**Missing from feed.** A stored job not seen in a successful fetch is
+retired `missing_from_feed` after **one** miss (JSON feeds are complete).
 
 **Expire** — `valid_through < now` → `expired`. **No age-based expiry.** (The
 90-day rule was removed after the real run: Palantir keeps evergreen Lever
@@ -462,51 +387,12 @@ postings with old `createdAt`, so 68 open jobs were retired, reactivated by
 the next feed, and retired again every run.) On upsert, an `expired` job is
 reactivated only if its `valid_through` is null or in the future.
 
-**Link + page check** — up to 400 `active` jobs selected once (nulls first by
-`last_checked_at`), slices of 40 per step. Steps 1–2 (`link_dead`) apply to
-every job. **Step 3 (the Browser Run page read + `closed_page`) applies only
-to jobs from `careers_page` sources**; for JSON-feed sources the feed is
-authoritative — a job the feed lists is open — so their 2xx responses are
-just stamped. (Real run: Stripe's Greenhouse `absolute_url` points at a
-search page, so two open Stripe internships were retired `closed_page`,
-reactivated by the next feed, and retired again.)
-
-1. GET `apply_url` with `redirect: "manual"`, follow at most 3 redirects
-   manually (resolving relative `Location`), 10 s timeout per hop.
-2. 404 or 410 at any hop → retire `link_dead`.
-3. Final 2xx with `text/html` → get the page text with **Browser Run
-   `markdown`** on the final URL (rendered, so JS-built pages such as Ashby
-   job pages have content); if that call errors, fall back to
-   `htmlToText(body)`. Use the first 6000 chars. If the text is **< 200
-   characters**, just stamp `last_checked_at`. Otherwise call `clef-flash`
-   with that text as `state` and one question:
-
-   ```json
-   {
-     "open": {
-       "type": "noul",
-       "instructions": "Is this page a specific job posting that is still open and accepting applications? Answer no for careers home pages, search pages, 'job not found' or 'no longer accepting applications' pages."
-     }
-   }
-   ```
-
-   `open.noul ≤ 0.15` → retire `closed_page`; else stamp `last_checked_at`.
-
-4. Any other status / network error / model error → stamp (status) or leave
-   untouched (errors), as today.
-
-**Page-check circuit breaker:** if a link-check slice would retire more than
-**25 %** of its jobs as `closed_page`, apply none of that slice's
-`closed_page` retirements and record the slice in `ingest_run.error`
-(`"closed_page breaker tripped on slice n"`). `link_dead` is unaffected.
-
 ## Workflow (`IngestWorkflow`)
 
 Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 
 1. `start` — insert `ingest_run`.
-2. `discover:listings`, then `discover:crawl:<host>` — one step per host;
-   all best-effort (caught).
+2. `discover:listings` — best-effort (caught).
 3. `discover:<n>` — probe queued candidates (≤ 10 steps × 15).
 4. `load sources` — enabled sources + `no_junior_roles` sources due for retry
    (re-enabled as trial).
@@ -515,39 +401,35 @@ Schedule: `0 6 * * 1` (Mondays 06:00 UTC). Params `{ trigger }`. Steps:
 6. `classify:<n>` — ≤ 100 steps × 20 pending jobs: decision + extraction.
 7. `trial` — trial evaluation for sources ingested this run.
 8. `expire`.
-9. `linkcheck:select`, `linkcheck:<n>` — link + page check, breaker.
-10. `finish` — totals (incl. `classified`, `rejected`, `review`,
-    `discovered`, `ai_input_tokens`, `browser_ms`), status `succeeded` / `partial` /
-    `failed`.
+9. `finish` — totals (incl. `classified`, `rejected`, `review`,
+   `discovered`, `ai_input_tokens`, `browser_ms`), status `succeeded` / `partial` /
+   `failed`.
 
 Step outputs stay small (counts/ids only). Default limit is 10,000 steps per
 instance (Workers Paid); the caps above keep a run well under 1,000.
 
-The AI binding is passed into `classify.ts`/`extract.ts`/`retire.ts` as an
+The AI binding is passed into `classify.ts`/`extract.ts` as an
 argument typed by a small interface in `ai.ts` (`decide(model, state,
 questions)`, `extract(state, fields, referenceDate)`) — the test seam, like
 `fetcher`. Tests pass a hand-written fake; no module mocking.
 
-## Dashboard / API / MCP (`apps/web`)
+## Dashboard / API (`apps/web`)
 
-- **Discovery page** (`/discovery`): textarea to paste domains → creates
-  manual candidates; table of candidates (input, origin, status, platform,
-  board, linked source, error), filter by status. Service + session route
-  `POST /api/discovery` (body `{ domains: string[] }`, max 500, each a valid
-  hostname) and `GET /api/discovery`; mirrored in `/api/v1` and MCP
-  (`discovery_add`, `discovery_list`). Admin-only like the rest.
+- **Discovery page** (`/discovery`): textarea to paste domains or
+  job-board URLs → creates manual candidates; table of candidates (input,
+  origin, status, platform, board, linked source, error), filter by status.
+  Service + session route `POST /api/discovery` (body `{ domains: string[] }`,
+  max 500, each a valid hostname or ATS board URL) and `GET /api/discovery`.
+  Admin-only like the rest.
 - **Jobs page**: status filter gains `pending | review | rejected`; default
   stays `active`. Job detail shows `classified_by`, confidence,
   `review_reason`/`reject_reason`, and the extracted fields. Actions:
   **Approve** (review/rejected → active, needs a level picked, sets
   `classified_by = 'admin'`) and **Reject** (→ rejected / `admin`). Admin
-  decisions are sticky across content changes. API/MCP: `jobs_approve`,
-  `jobs_reject`.
+  decisions are sticky across content changes.
 - **Sources page**: show `origin`, `trial`, `disabled_reason`.
 - **Runs page**: show the new totals including `ai_input_tokens` and
   `browser_ms`.
-- **Sources page**: `careers_page` sources show their listing URL; the add
-  source form accepts platform `careers_page` with a listing URL.
 
 ## Site (`apps/site`)
 
@@ -557,80 +439,25 @@ questions)`, `extract(state, fields, referenceDate)`) — the test seam, like
   `{ "@type": "MonetaryAmount", currency, value: { "@type":
   "QuantitativeValue", minValue, maxValue, unitText: salary_period } }`.
 - Job page stub: show salary (formatted with `Intl.NumberFormat`, currency,
-  "/ year" etc.) and "Grad year" when present.
+  "/ year" etc.) when present.
 
 ## Browser Run (`browser.ts`)
 
-Browser Run is the primitive for **reading web pages** (discovery, page
-check, careers-page sources). Platform JSON feeds and the Common Crawl index
-stay on plain `fetch` — they are APIs, and a browser would only add cost and
-lose their stable ids.
+Browser Run is used for one thing: **scanning a pasted domain's candidate
+pages for ATS links** (rendered, so script-injected boards count). Platform
+JSON feeds stay on plain `fetch` — they are APIs.
 
-- Binding `BROWSER` on the jobs worker (runtime type `BrowserRun`). Calls:
-  `env.BROWSER.quickAction("links", { url })` and
-  `env.BROWSER.quickAction("markdown", { url })`; each returns a `Response`
-  whose JSON is `{ success, result }` (`links` → `string[]` of absolute URLs,
-  `markdown` → `string`).
+- Binding `BROWSER` on the jobs worker (runtime type `BrowserRun`). Call:
+  `env.BROWSER.quickAction("links", { url })` → a `Response` whose JSON is
+  `{ success, result: string[] }` of absolute URLs.
 - `browser.ts` exposes a seam like `ai.ts`:
-  `interface Browser { links(url): Promise<string[]>; markdown(url):
-  Promise<string> }`, built from the binding. Tests pass a hand-written fake.
+  `interface Browser { links(url): Promise<string[]> }`, built from the
+  binding. Tests pass a hand-written fake.
 - Each call: 30 s timeout (`AbortSignal.timeout` around the call); on HTTP
   429 retry up to 2 times after 2 s and 6 s; any other failure throws.
   Sum the `X-Browser-Ms-Used` response header into the step's returned
   counts → `ingest_run.browser_ms` (new integer column, default 0).
 - Calls are sequential (no parallel fan-out) to stay inside rate limits.
-
-## Careers-page sources (`platforms/careers-page.ts`)
-
-New platform `careers_page` (add to the `source.platform` enum) for
-companies with no supported job board. `board` = the listing URL normalised
-(lower-case host, no query/fragment, no trailing slash); `config =
-{"listingUrl": string}`. The adapter receives `{ fetcher, browser, ai }`
-(extend the adapter context; the JSON platforms ignore `browser`/`ai`).
-
-**Listing parse** (used by discovery step 5 and by every ingest):
-
-1. `browser.markdown(listingUrl)`. Extract Markdown links `[text](url)`;
-   resolve relative URLs against the listing URL; drop `mailto:`, `tel:`,
-   `#` anchors, links with empty text, and links whose host is not the
-   listing's registrable domain or a known job host (`myworkdayjobs.com`,
-   `greenhouse.io`, `lever.co`, `ashbyhq.com`, `smartrecruiters.com`,
-   `workable.com`, `recruitee.com`, `personio.de`, `personio.com`). Dedupe by
-   normalised URL, keep the first 200.
-2. In batches of up to 60 links, one `clef-flash` call per batch: `state` =
-   `"Links from the careers page {listingUrl}:\n"` + numbered list
-   `"{i}. {text} → {url}"`, and one `noul` question per link, id `l{i}`:
-   `"instructions": "Is link {i} a link to one individual job posting (not a category, search, team, location or general careers page)?"`.
-3. A link with `noul ≥ 0.70` is a job link.
-
-**Ingest** for a `careers_page` source:
-
-- The job links from the listing parse are the feed: `externalId` =
-  normalised job URL, `title` = link text cleaned: if it contains an HTML
-  heading (`<h1>`–`<h6>`) use that heading's text, else the text before the
-  first HTML tag or line break; then strip any remaining tags, decode
-  entities, collapse whitespace, trim (real run: Revolut/Shopify link text
-  was `"<h2>Support Specialist</h2>Remote: Philippines"`). `applyUrl` = job
-  URL. Feed diff and the shrink guard apply as for any source.
-- For job links not yet stored (new), fetch details: `browser.markdown(url)`
-  → `descriptionHtml` = `markdownToHtml(md)` (a small pure function in
-  `html.ts`: HTML-escape everything, blank-line-separated blocks → `<p>`,
-  consecutive lines starting `- `/`* ` → `<ul><li>`, lines starting `#`… →
-  `<h3>`; no raw HTML passes through). Before conversion, strip a leading
-  YAML front-matter block (`---` … `---`) that Browser Run's Markdown may
-  start with. Then one `clairic` call on the Markdown with fields
-  `{"location": {"type": "text", "instructions": "Where the job is based, as
-  written on the page"}}` → `locationRaw` (value with confidence ≥ 0.80,
-  else `""`). `postedAt` stays null (first_seen_at is used). (A
-  `posted_date` field was removed after the real run: with no date on the
-  page Clairic returned the reference date — today — at ≥ 0.80 confidence.)
-- At most **30 new job pages per careers-page source per run**; links beyond
-  that are left out of this run's upsert and **excluded from the feed diff**
-  (they are not "missing", just not fetched yet). Existing jobs whose link is
-  still listed are only re-seen (no page fetch).
-- From there the job follows the normal path: pre-filter → `pending` →
-  classify → extract.
-- Ingest step timeout for careers-page sources: 10 minutes.
 
 ## Infra (`alchemy.run.ts`)
 

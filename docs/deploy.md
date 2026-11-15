@@ -33,16 +33,14 @@ Cloudflare's API spec, custom domains, static-asset upload sessions and Worker P
 accept only Workers Scripts Write. Secrets Store is for Alchemy's state store
 (`alchemy-state-store`). No DNS permission is needed (custom domains create their own records).
 
-| Secret                                      | Scope                                                                         | Notes                            |
-| ------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------- |
-| `CLOUDFLARE_API_TOKEN`                      | see the token table above                                                     | prod: environment; preview: repo |
-| `CLOUDFLARE_ACCOUNT_ID`                     | Account ID (dashboard → overview)                                             |                                  |
-| `CLOUDFLARE_ZONE_ID`                        | Zone ID for the apex domain                                                   | Prod only — Turnstile + Email    |
-| `WORKERS_DEV_SUBDOMAIN`                     | your `*.workers.dev` subdomain                                                | Used to build preview URLs       |
-| `BETTER_AUTH_SECRET`                        | `openssl rand -base64 32`                                                     | Auth session signing             |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth client; redirect `https://app.<domain>/api/auth/callback/google` | Optional — empty disables Google |
-| `OWNER_ADMIN_EMAIL`                         | verified owner email for admin bootstrap                                      |                                  |
-| `SIGNUP_DISABLED`                           | `production` **variable** (not secret) — `true` closes new sign-ups           | Optional — unset = open          |
+| Secret                  | Scope                                    | Notes                            |
+| ----------------------- | ---------------------------------------- | -------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | see the token table above                | prod: environment; preview: repo |
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID (dashboard → overview)        |                                  |
+| `CLOUDFLARE_ZONE_ID`    | Zone ID for the apex domain              | Prod only — Turnstile + Email    |
+| `WORKERS_DEV_SUBDOMAIN` | your `*.workers.dev` subdomain           | Used to build preview URLs       |
+| `BETTER_AUTH_SECRET`    | `openssl rand -base64 32`                | Auth session signing             |
+| `OWNER_ADMIN_EMAIL`     | verified owner email for admin bootstrap |                                  |
 
 **First deploy:** a new project's first PR can't get a Worker Preview —
 previews are versions of the production Workers, which don't exist until the

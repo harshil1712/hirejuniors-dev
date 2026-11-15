@@ -6,8 +6,6 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { admin } from "better-auth/plugins";
-import { apiKey } from "@better-auth/api-key";
-import { PRODUCT } from "./src/config";
 
 const db = drizzle(new Database(":memory:"));
 
@@ -15,11 +13,5 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "sqlite" }),
   baseURL: "http://localhost:5173",
   secret: "cli-placeholder-secret-at-least-32-characters-long",
-  socialProviders: { google: { clientId: "x", clientSecret: "x" } },
-  plugins: [
-    // Internal plugin rate limiting is off — per-key limiting is ours (CF
-    // RateLimit binding on /api/v1 and /mcp).
-    apiKey({ defaultPrefix: PRODUCT.apiKeyPrefix, rateLimit: { enabled: false } }),
-    admin(),
-  ],
+  plugins: [admin()],
 });

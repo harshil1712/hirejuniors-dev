@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/sources";
-import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
 import {
   ErrorResponse,
   SourceCreate,
@@ -31,7 +31,7 @@ sourcesApi.openapi(
     path: "/sources",
     tags: ["Sources"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     responses: {
       200: { content: json(SourceList), description: "All sources" },
       ...errors(401, 403),
@@ -49,7 +49,7 @@ sourcesApi.openapi(
     path: "/sources",
     tags: ["Sources"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: { body: { content: json(SourceCreate), required: true } },
     responses: {
       201: { content: json(SourceResult), description: "Created source" },
@@ -70,7 +70,7 @@ sourcesApi.openapi(
     path: "/sources/preview",
     tags: ["Sources"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: { body: { content: json(SourcePreview), required: true } },
     responses: {
       200: { content: json(SourcePreviewResult), description: "Dry-run result" },
@@ -90,7 +90,7 @@ sourcesApi.openapi(
     path: "/sources/{id}",
     tags: ["Sources"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: {
       params: idParam,
       body: { content: json(SourceUpdate), required: true },

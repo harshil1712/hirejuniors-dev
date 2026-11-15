@@ -13,7 +13,6 @@ interface JobForExtract {
   descriptionHtml: string | null;
   postedAt: Date | null;
   firstSeenAt: Date;
-  validThrough: Date | null;
 }
 
 export interface SalaryHints {
@@ -25,15 +24,12 @@ export interface SalaryHints {
 
 export interface ExtractOutcome {
   set: Partial<typeof job.$inferInsert>;
-  rejectedExperience: boolean;
   inputTokens: number;
 }
 
 function usable(a: ExtractAnswer | undefined): a is ExtractAnswer & { value: string | number } {
   return !!a && a.value !== null && a.value !== undefined && a.confidence >= 0.8;
 }
-
-const DAY = 24 * 60 * 60 * 1000;
 
 export async function extractForJob(
   db: Db,
@@ -54,15 +50,6 @@ export async function extractForJob(
     });
     const res = await ai.extract(state, EXTRACT_FIELDS, referenceDate);
     const a = res.answers;
-    let rejectedExperience = false;
-
-    if (usable(a.min_years_experience)) {
-      const years = Number(a.min_years_experience.value);
-      if (years >= 0 && years <= 15) {
-        set.minYearsExperience = years;
-        if (years >= 3) rejectedExperience = true;
-      }
-    }
 
     if (usable(a.salary_min) && usable(a.salary_max)) {
       const min = Number(a.salary_min.value);
@@ -82,27 +69,10 @@ export async function extractForJob(
       }
     }
 
-    if (usable(a.application_deadline) && row.validThrough == null) {
-      const d = new Date(`${a.application_deadline.value}T00:00:00Z`);
-      if (
-        !Number.isNaN(d.getTime()) &&
-        d.getTime() > reference.getTime() &&
-        d.getTime() <= reference.getTime() + 365 * DAY
-      ) {
-        set.validThrough = d;
-      }
-    }
-
-    if (usable(a.graduation_year)) {
-      const y = Number(a.graduation_year.value);
-      const cy = new Date().getUTCFullYear();
-      if (y >= cy - 1 && y <= cy + 4) set.graduationYear = y;
-    }
-
     set.extractedAt = new Date();
-    return { set, rejectedExperience, inputTokens: res.inputTokens };
+    return { set, inputTokens: res.inputTokens };
   } catch {
     // Clairic error → fields stay null, step continues.
-    return { set, rejectedExperience: false, inputTokens: 0 };
+    return { set, inputTokens: 0 };
   }
 }

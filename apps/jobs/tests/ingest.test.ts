@@ -288,45 +288,6 @@ describe("no_junior_roles retry (ingestibleSources)", () => {
   });
 });
 
-describe("feed diff thresholds (spec §Feed diff)", () => {
-  it("careers_page misses need 2 runs to retire", async () => {
-    const src = await seedSource({
-      id: "src_diff_cp",
-      companyId: "cmp_ing01",
-      board: "https://c.example/jobs",
-      platform: "careers_page",
-      config: '{"listingUrl":"https://c.example/jobs"}',
-    });
-    await upsertListings(db(), src, "ingco", [
-      listing({ externalId: "keep-cp" }),
-      listing({ externalId: "gone-cp" }),
-    ]);
-    await db().update(job).set({ status: "active" }).where(eq(job.externalId, "gone-cp"));
-
-    // miss 1 → counted, still active
-    let counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "keep-cp" })]);
-    expect(counts.retired).toBe(0);
-    let [j] = (await jobsFor("src_diff_cp")).filter((r) => r.externalId === "gone-cp");
-    expect(j.status).toBe("active");
-    expect(j.missedRuns).toBe(1);
-
-    // miss 2 → retired
-    counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "keep-cp" })]);
-    expect(counts.retired).toBe(1);
-    [j] = (await jobsFor("src_diff_cp")).filter((r) => r.externalId === "gone-cp");
-    expect(j.status).toBe("retired");
-    expect(j.retireReason).toBe("missing_from_feed");
-  });
-
-  it("JSON platform still retires at miss 1 (threshold unchanged)", async () => {
-    const src = await seedSource({ id: "src_diff_lv", companyId: "cmp_ing01", board: "diff-lv" });
-    await upsertListings(db(), src, "ingco", [listing({ externalId: "gone-lv" })]);
-    await db().update(job).set({ status: "active" }).where(eq(job.externalId, "gone-lv"));
-    const counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "other" })]);
-    expect(counts.retired).toBe(1);
-  });
-});
-
 describe("expired reactivation gate (spec §Expiry)", () => {
   it("expired + past valid_through reappears → stays retired", async () => {
     const src = await seedSource({ id: "src_exp01", companyId: "cmp_ing01", board: "exp1" });
@@ -346,7 +307,6 @@ describe("expired reactivation gate (spec §Expiry)", () => {
     const [j] = await jobsFor("src_exp01");
     expect(j.status).toBe("retired");
     expect(j.retireReason).toBe("expired");
-    expect(j.missedRuns).toBe(0); // sighting stamped, not counted missing
   });
 
   it("expired + future valid_through reappears → reactivated", async () => {

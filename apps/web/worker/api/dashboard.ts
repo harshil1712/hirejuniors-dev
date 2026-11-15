@@ -2,14 +2,14 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/runs";
-import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
 import { DashboardSummary, ErrorResponse } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
 
 /**
- * Dashboard summary — session-only (not mounted on /api/v1): the counts and
- * last-run tile the /dashboard page renders.
+ * Dashboard summary — the counts and last-run tile the /dashboard page
+ * renders.
  */
 export const dashboardApi = new OpenAPIHono<AppEnv>({ defaultHook: validationHook });
 
@@ -20,7 +20,7 @@ dashboardApi.openapi(
     method: "get",
     path: "/dashboard",
     tags: ["Dashboard"],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     responses: {
       200: { content: json(DashboardSummary), description: "Dashboard tile counts" },
       401: { content: json(ErrorResponse), description: "Error" },

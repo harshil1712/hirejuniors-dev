@@ -1,7 +1,15 @@
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { env, SELF } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vite-plus/test";
-import { migrate, signUp, verifyLatest, PASSWORD } from "./helpers";
+import {
+  migrate,
+  seedVerifiedUser,
+  signIn,
+  signUp,
+  verifiedSessionCookie,
+  verifyLatest,
+  PASSWORD,
+} from "./helpers";
 
 // The always-pass test secret accepts any token; "" exercises the missing-token path.
 const CAPTCHA = { "x-captcha-response": "test-token" };
@@ -31,54 +39,38 @@ describe("worker", () => {
 
   it("/api/public-config returns the test site key", async () => {
     const r = await SELF.fetch("https://x/api/public-config");
-    const j = await r.json<{ turnstileSiteKey: string; googleEnabled: boolean }>();
+    const j = await r.json<{ turnstileSiteKey: string }>();
     expect(j.turnstileSiteKey).toBe("1x00000000000000000000AA");
-    expect(j.googleEnabled).toBe(false);
   });
 });
 
 describe("auth", () => {
   beforeAll(migrate);
 
-  it("SIGNUP_DISABLED=true allows only the owner email; sign-in still works", async () => {
-    // Seed a verified user with the flag off first.
-    const email = `disabled-${crypto.randomUUID()}@t.dev`;
-    await signUp(email);
-    await verifyLatest(email);
+  it("sign-up is owner-only: non-owner rejected, owner allowed, sign-in still works", async () => {
+    const email = `u-${crypto.randomUUID()}@t.dev`;
+    await seedVerifiedUser(email);
 
-    env.SIGNUP_DISABLED = "true";
-    try {
-      // Stranger → rejected, no user row.
-      const closedEmail = `closed-${crypto.randomUUID()}@t.dev`;
-      const closed = await signUp(closedEmail);
-      expect(closed.status).not.toBe(200);
-      const row = await env.DB.prepare("SELECT id FROM user WHERE email = ?")
-        .bind(closedEmail)
-        .first();
-      expect(row).toBeNull();
+    // Stranger → rejected, no user row.
+    const closedEmail = `closed-${crypto.randomUUID()}@t.dev`;
+    const closed = await signUp(closedEmail);
+    expect(closed.status).not.toBe(200);
+    const row = await env.DB.prepare("SELECT id FROM user WHERE email = ?")
+      .bind(closedEmail)
+      .first();
+    expect(row).toBeNull();
 
-      // Owner (OWNER_ADMIN_EMAIL=owner@example.com) → allowed.
-      const owner = await signUp("owner@example.com");
-      expect(owner.status).toBe(200);
+    // Owner (OWNER_ADMIN_EMAIL=owner@example.com) → allowed.
+    const owner = await signUp("owner@example.com");
+    expect(owner.status).toBe(200);
 
-      const config = await SELF.fetch("https://x/api/public-config");
-      expect((await config.json<{ signupEnabled: boolean }>()).signupEnabled).toBe(false);
-
-      // Existing accounts still sign in.
-      const login = await SELF.fetch("https://x/api/auth/sign-in/email", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-captcha-response": "test" },
-        body: JSON.stringify({ email, password: PASSWORD }),
-      });
-      expect(login.status).toBe(200);
-    } finally {
-      env.SIGNUP_DISABLED = "";
-    }
-  });
-
-  it("public-config defaults to sign-ups open", async () => {
-    const config = await SELF.fetch("https://x/api/public-config");
-    expect((await config.json<{ signupEnabled: boolean }>()).signupEnabled).toBe(true);
+    // Existing accounts still sign in.
+    const login = await SELF.fetch("https://x/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-captcha-response": "test" },
+      body: JSON.stringify({ email, password: PASSWORD }),
+    });
+    expect(login.status).toBe(200);
   });
 
   it("sign-up without a captcha token is rejected", async () => {
@@ -87,7 +79,17 @@ describe("auth", () => {
   });
 
   it("sign-up with the always-pass token sends a verification email; sign-in is refused until verified", async () => {
-    const email = `u-${crypto.randomUUID()}@t.dev`;
+    // Sign-up is owner-only, so the flow is exercised with the owner email;
+    // remove any owner row left by earlier tests so sign-up succeeds.
+    const email = "owner@example.com";
+    const existing = await env.DB.prepare("SELECT id FROM user WHERE email = ?")
+      .bind(email)
+      .first<{ id: string }>();
+    if (existing) {
+      await env.DB.prepare("DELETE FROM session WHERE user_id = ?").bind(existing.id).run();
+      await env.DB.prepare("DELETE FROM account WHERE user_id = ?").bind(existing.id).run();
+      await env.DB.prepare("DELETE FROM user WHERE id = ?").bind(existing.id).run();
+    }
     const r = await signUp(email);
     expect(r.status).toBe(200);
 
@@ -115,9 +117,7 @@ describe("auth", () => {
   it("admin list-users: 403 for a normal user, 200 for the owner after verification", async () => {
     // normal user
     const email = `n-${crypto.randomUUID()}@t.dev`;
-    await signUp(email);
-    const v = await verifyLatest(email);
-    const cookies = v.headers.get("set-cookie") ?? "";
+    const cookies = await verifiedSessionCookie(email);
     const r1 = await SELF.fetch("https://x/api/auth/admin/list-users", {
       headers: { cookie: cookies },
     });
@@ -125,42 +125,13 @@ describe("auth", () => {
 
     // owner (OWNER_ADMIN_EMAIL=owner@example.com) — verify first, then the
     // admin plugin sees role=admin from the bootstrap hook. The account may
-    // already exist (the SIGNUP_DISABLED test above signs the owner up), so
+    // already exist (the owner-only test above signs the owner up), so
     // don't assert on the sign-up status.
-    await signUp("owner@example.com");
-    const v2 = await verifyLatest("owner@example.com");
+    // Owner exists already (verified in the sign-up flow test); sign in.
+    const cookies2 = await signIn("owner@example.com");
     const r2 = await SELF.fetch("https://x/api/auth/admin/list-users", {
-      headers: { cookie: v2.headers.get("set-cookie") ?? "" },
+      headers: { cookie: cookies2 },
     });
     expect(r2.status).toBe(200);
-  });
-
-  it("delete-user: wrong password is refused; the right one deletes the account", async () => {
-    const email = `d-${crypto.randomUUID()}@t.dev`;
-    await signUp(email);
-    const v = await verifyLatest(email);
-    const headers = {
-      "content-type": "application/json",
-      cookie: v.headers.get("set-cookie") ?? "",
-      // Cookie-authenticated POSTs must come from a trusted origin (BETTER_AUTH_URL).
-      origin: "http://localhost:8787",
-    };
-
-    const wrong = await SELF.fetch("https://x/api/auth/delete-user", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ password: "not-the-password" }),
-    });
-    expect(wrong.status).toBe(400);
-
-    const ok = await SELF.fetch("https://x/api/auth/delete-user", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ password: PASSWORD }),
-    });
-    expect(ok.status).toBe(200);
-
-    const row = await env.DB.prepare("SELECT id FROM user WHERE email = ?").bind(email).first();
-    expect(row).toBeNull();
   });
 });

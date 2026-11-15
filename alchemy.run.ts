@@ -92,7 +92,7 @@ export const Web = Cloudflare.Website.Vite(
       preview: PREVIEW_NAME ? { of: `${PROJECT.name}-web`, name: PREVIEW_NAME } : undefined,
       assets: {
         notFoundHandling: "single-page-application" as const,
-        runWorkerFirst: ["/api/*", "/mcp", "/.well-known/api-catalog"],
+        runWorkerFirst: ["/api/*"],
       },
       env: {
         PUBLIC_APP_URL: "https://" + APP_DOMAIN,
@@ -102,27 +102,13 @@ export const Web = Cloudflare.Website.Vite(
           namespaceId: 1001,
           simple: { limit: 60, period: 60 },
         }),
-        // Per-key limit on /api/v1 and /mcp (spec §4.4).
-        API_RATE_LIMITER: Cloudflare.RateLimit("API_RATE_LIMITER", {
-          namespaceId: 1002,
-          simple: { limit: PROJECT.api.rateLimitPerMinute, period: 60 },
-        }),
         TURNSTILE_SECRET_KEY: widget ? widget.secret : "1x0000000000000000000000000000000AA",
         TURNSTILE_SITE_KEY: widget ? widget.sitekey : "1x00000000000000000000AA",
         BETTER_AUTH_SECRET: Config.Redacted("BETTER_AUTH_SECRET"),
         BETTER_AUTH_URL: Config.Redacted("BETTER_AUTH_URL").pipe(
           Config.withDefault(isProd ? `https://${APP_DOMAIN}` : "http://localhost:1338"),
         ),
-        GOOGLE_CLIENT_ID: Config.Redacted("GOOGLE_CLIENT_ID").pipe(Config.withDefault("")),
-        GOOGLE_CLIENT_SECRET: Config.Redacted("GOOGLE_CLIENT_SECRET").pipe(Config.withDefault("")),
         OWNER_ADMIN_EMAIL: Config.String("OWNER_ADMIN_EMAIL").pipe(Config.withDefault("")),
-        // Closed on prod (owner-only sign-up via the user.create hook);
-        // open elsewhere so previews/dev stay usable. Env still overrides.
-        SIGNUP_DISABLED: Config.String("SIGNUP_DISABLED").pipe(
-          Config.withDefault(isProd ? "true" : ""),
-        ),
-        OAUTH_PROXY_URL: Config.String("OAUTH_PROXY_URL").pipe(Config.withDefault("")),
-        OAUTH_PROXY_SECRET: Config.Redacted("OAUTH_PROXY_SECRET").pipe(Config.withDefault("")),
       },
     };
     if (PREVIEW_NAME) return props;

@@ -197,9 +197,7 @@ function JobDetail() {
                 <Field label="Valid through" value={fmt(job.validThrough)} />
                 <Field label="First seen" value={fmt(job.firstSeenAt)} />
                 <Field label="Last seen" value={fmt(job.lastSeenAt)} />
-                <Field label="Last checked" value={fmt(job.lastCheckedAt)} />
                 <Field label="Retired" value={fmt(job.retiredAt)} />
-                <Field label="Missed runs" value={String(job.missedRuns)} />
                 <Field label="Classified by" value={job.classifiedBy} />
                 <Field label="Classified at" value={fmt(job.classifiedAt)} />
                 <Field
@@ -217,10 +215,6 @@ function JobDetail() {
                       ? `${job.salaryCurrency ?? ""} ${job.salaryMin}–${job.salaryMax} / ${job.salaryPeriod ?? "?"}`
                       : null
                   }
-                />
-                <Field
-                  label="Grad year"
-                  value={job.graduationYear ? String(job.graduationYear) : null}
                 />
                 <Field label="Slug" value={job.slug} />
                 <Field label="Company" value={`${job.company.name} (${job.company.slug})`} />

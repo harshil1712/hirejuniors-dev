@@ -39,7 +39,7 @@ export const source = sqliteTable(
       .notNull()
       .references(() => company.id, { onDelete: "cascade" }),
     platform: text("platform", {
-      enum: ["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"],
+      enum: ["greenhouse", "lever", "ashby", "amazon_jobs"],
     }).notNull(),
     /** Greenhouse board token / Lever site / Ashby board name / "amazon". */
     board: text("board").notNull(),
@@ -104,27 +104,23 @@ export const job = sqliteTable(
       .default("pending"),
     retiredAt: integer("retired_at", { mode: "timestamp_ms" }),
     retireReason: text("retire_reason", {
-      enum: ["missing_from_feed", "link_dead", "closed_page", "expired", "manual"],
+      enum: ["missing_from_feed", "expired", "manual"],
     }),
     contentHash: text("content_hash").notNull(),
     classifiedAt: integer("classified_at", { mode: "timestamp_ms" }),
     classifiedBy: text("classified_by", { enum: ["rules", "clef-flash", "clef", "admin"] }),
     classifierConfidence: real("classifier_confidence"),
     rejectReason: text("reject_reason", {
-      enum: ["not_early_career", "not_tech", "experience", "admin"],
+      enum: ["not_early_career", "not_tech", "admin"],
     }),
     reviewReason: text("review_reason"),
-    minYearsExperience: integer("min_years_experience"),
     salaryMin: integer("salary_min"),
     salaryMax: integer("salary_max"),
     salaryCurrency: text("salary_currency"),
     salaryPeriod: text("salary_period", { enum: ["HOUR", "WEEK", "MONTH", "YEAR"] }),
-    graduationYear: integer("graduation_year"),
     extractedAt: integer("extracted_at", { mode: "timestamp_ms" }),
-    missedRuns: integer("missed_runs").notNull().default(0),
     firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
-    lastCheckedAt: integer("last_checked_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (table) => [
@@ -166,7 +162,7 @@ export const discoveryCandidate = sqliteTable(
   "discovery_candidate",
   {
     id: id("dsc_"),
-    origin: text("origin", { enum: ["manual", "crawl"] }).notNull(),
+    origin: text("origin", { enum: ["manual", "listings"] }).notNull(),
     input: text("input").notNull(),
     status: text("status", {
       enum: ["queued", "found", "not_found", "duplicate", "failed"],
@@ -174,7 +170,7 @@ export const discoveryCandidate = sqliteTable(
       .notNull()
       .default("queued"),
     platform: text("platform", {
-      enum: ["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"],
+      enum: ["greenhouse", "lever", "ashby", "amazon_jobs"],
     }),
     board: text("board"),
     sourceId: text("source_id").references(() => source.id, { onDelete: "set null" }),
@@ -184,16 +180,6 @@ export const discoveryCandidate = sqliteTable(
   },
   (table) => [uniqueIndex("discovery_candidate_input_idx").on(table.input)],
 );
-
-export const discoveryCursor = sqliteTable("discovery_cursor", {
-  id: text("id").primaryKey(),
-  nextPage: integer("next_page").notNull().default(0),
-  numPages: integer("num_pages"),
-  done: integer("done", { mode: "boolean" }).notNull().default(false),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .$defaultFn(() => new Date())
-    .notNull(),
-});
 
 export const sourceRun = sqliteTable("source_run", {
   id: id("srn_"),

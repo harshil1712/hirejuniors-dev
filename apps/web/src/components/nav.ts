@@ -4,14 +4,13 @@ import {
   Gear,
   House,
   PlayCircle,
-  ShieldCheck,
   Stack,
   type Icon,
 } from "@phosphor-icons/react";
 
 export interface NavItem {
   label: string;
-  to: "/dashboard" | "/jobs" | "/sources" | "/discovery" | "/runs" | "/settings" | "/admin";
+  to: "/dashboard" | "/jobs" | "/sources" | "/discovery" | "/runs" | "/settings";
   icon: Icon;
   adminOnly?: boolean;
 }
@@ -24,7 +23,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Discovery", to: "/discovery", icon: Binoculars },
   { label: "Runs", to: "/runs", icon: PlayCircle },
   { label: "Settings", to: "/settings", icon: Gear },
-  { label: "Admin", to: "/admin", icon: ShieldCheck, adminOnly: true },
 ];
 
 export function navItemsFor(role: string | null | undefined): NavItem[] {

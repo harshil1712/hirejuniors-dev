@@ -2,15 +2,14 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/jobs";
-import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
+import { requireAdmin, type PrincipalVars } from "../middleware/principal";
 import { ErrorResponse, JobApprove, JobList, JobListQuery, JobResult, JobUpdate } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
 
 /**
- * Job listings — same router for the session-authenticated `/api/jobs/*`
- * dashboard routes and the key-authenticated `/api/v1`. Authentication is
- * supplied by the mount point; every route also requires the admin role.
+ * Job listings — session-authenticated `/api/jobs/*` dashboard routes;
+ * every route also requires the admin role.
  */
 export const jobsApi = new OpenAPIHono<AppEnv>({ defaultHook: validationHook });
 
@@ -28,7 +27,7 @@ jobsApi.openapi(
     path: "/jobs",
     tags: ["Jobs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     request: { query: JobListQuery },
     responses: {
       200: { content: json(JobList), description: "Page of jobs" },
@@ -49,7 +48,7 @@ jobsApi.openapi(
     path: "/jobs/{id}",
     tags: ["Jobs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "read"), requireAdmin],
+    middleware: [requireAdmin],
     request: { params: idParam },
     responses: {
       200: { content: json(JobResult), description: "The job" },
@@ -70,7 +69,7 @@ jobsApi.openapi(
     path: "/jobs/{id}",
     tags: ["Jobs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: {
       params: idParam,
       body: { content: json(JobUpdate), required: true },
@@ -95,7 +94,7 @@ jobsApi.openapi(
     path: "/jobs/{id}/approve",
     tags: ["Jobs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: {
       params: idParam,
       body: { content: json(JobApprove), required: true },
@@ -119,7 +118,7 @@ jobsApi.openapi(
     path: "/jobs/{id}/reject",
     tags: ["Jobs"],
     security: [{ bearerAuth: [] }],
-    middleware: [requireScope("jobs", "write"), requireAdmin],
+    middleware: [requireAdmin],
     request: { params: idParam },
     responses: {
       200: { content: json(JobResult), description: "Rejected job" },

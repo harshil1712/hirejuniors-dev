@@ -62,17 +62,13 @@ CREATE TABLE job (
   classifier_confidence real,
   reject_reason text,
   review_reason text,
-  min_years_experience integer,
   salary_min integer,
   salary_max integer,
   salary_currency text,
   salary_period text,
-  graduation_year integer,
   extracted_at integer,
-  missed_runs integer NOT NULL DEFAULT 0,
   first_seen_at integer NOT NULL,
   last_seen_at integer NOT NULL,
-  last_checked_at integer,
   created_at integer NOT NULL,
   updated_at integer NOT NULL
 );
@@ -145,10 +141,3 @@ CREATE TABLE discovery_candidate (
 --> statement-breakpoint
 CREATE UNIQUE INDEX discovery_candidate_input_idx ON discovery_candidate (input);
 --> statement-breakpoint
-CREATE TABLE discovery_cursor (
-  id text PRIMARY KEY,
-  next_page integer NOT NULL DEFAULT 0,
-  num_pages integer,
-  done integer NOT NULL DEFAULT 0,
-  updated_at integer NOT NULL
-);

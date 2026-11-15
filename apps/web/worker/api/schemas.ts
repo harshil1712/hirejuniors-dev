@@ -19,7 +19,6 @@ const JOB_EXAMPLE = {
   status: "active",
   retiredAt: null,
   retireReason: null,
-  missedRuns: 0,
   company: { id: "cmp_cloudflare000001", name: "Cloudflare", slug: "cloudflare" },
   sourceId: "src_cf_greenhouse01",
 } as const;
@@ -64,23 +63,6 @@ const RUN_EXAMPLE = {
   error: null,
 } as const;
 
-const API_KEY_EXAMPLE = {
-  id: "k_2aF9xQzLmNpRwVbCtYsEuHgJdKiO",
-  key: "hj_9f2kLmQwXyZaBcDeFgHiJkLmNoPqRsTuVwXyZ",
-  name: "Claude Code",
-  start: "hj_9f2",
-  expiresAt: "2027-01-15T09:30:00.000Z",
-  scopes: ["jobs:read"],
-} as const;
-
-const ME_EXAMPLE = {
-  userId: "O4q6Rkcv8paDGK8krUsg0a9mBZ2k6FiZ",
-  email: "you@example.com",
-  name: "You",
-  keyId: "k_2aF9xQzLmNpRwVbCtYsEuHgJdKiO",
-  scopes: ["jobs:read"],
-} as const;
-
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -113,11 +95,10 @@ export const Job = z
     validThrough: z.iso.datetime().nullable().openapi({ example: null }),
     firstSeenAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.firstSeenAt }),
     lastSeenAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
-    lastCheckedAt: z.iso.datetime().nullable().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
     status: JobStatus,
     retiredAt: z.iso.datetime().nullable().openapi({ example: null }),
     retireReason: z
-      .enum(["missing_from_feed", "link_dead", "closed_page", "expired", "manual"])
+      .enum(["missing_from_feed", "expired", "manual"])
       .nullable()
       .openapi({ example: null }),
     classifiedAt: z.iso.datetime().nullable().openapi({ example: null }),
@@ -127,17 +108,14 @@ export const Job = z
       .openapi({ example: "clef-flash" }),
     classifierConfidence: z.number().nullable().openapi({ example: null }),
     rejectReason: z
-      .enum(["not_early_career", "not_tech", "experience", "admin"])
+      .enum(["not_early_career", "not_tech", "admin"])
       .nullable()
       .openapi({ example: null }),
     reviewReason: z.string().nullable().openapi({ example: null }),
-    minYearsExperience: z.number().int().nullable().openapi({ example: null }),
     salaryMin: z.number().int().nullable().openapi({ example: null }),
     salaryMax: z.number().int().nullable().openapi({ example: null }),
     salaryCurrency: z.string().nullable().openapi({ example: null }),
     salaryPeriod: z.enum(["HOUR", "WEEK", "MONTH", "YEAR"]).nullable().openapi({ example: null }),
-    graduationYear: z.number().int().nullable().openapi({ example: null }),
-    missedRuns: z.number().int().openapi({ example: 0 }),
     createdAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.firstSeenAt }),
     updatedAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
     companyId: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
@@ -246,7 +224,7 @@ export const CompanyResult = z.object({ data: Company }).openapi("CompanyResult"
 // ---------------------------------------------------------------------------
 
 export const SourcePlatform = z
-  .enum(["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"])
+  .enum(["greenhouse", "lever", "ashby", "amazon_jobs"])
   .openapi("SourcePlatform", { example: "greenhouse" });
 
 export const Source = z
@@ -290,7 +268,7 @@ export const SourceCreate = z
   .object({
     companyId: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
     platform: SourcePlatform,
-    // Board token for ATS platforms; a listing URL for careers_page.
+    // Board token for the platform.
     board: z.union([BoardSlug, z.string().url()]).openapi({ example: "cloudflare" }),
     config: z.string().max(4000).default("{}").openapi({ example: "{}" }),
     includeAll: z.boolean().default(false),
@@ -480,48 +458,6 @@ export const ErrorResponse = z.object({ error: ErrorBody }).openapi("ErrorRespon
   },
 });
 
-export const Scope = z.enum(["jobs:read", "jobs:write"]).openapi("Scope", { example: "jobs:read" });
-
-export const ApiKeyCreate = z
-  .object({
-    name: z.string().trim().min(1).max(32).openapi({ example: "Claude Code" }),
-    scopes: z.array(Scope).min(1),
-    expiresInDays: z
-      .union([z.literal(30), z.literal(90), z.literal(365), z.null()])
-      .openapi({ example: 90 }),
-  })
-  .openapi("ApiKeyCreate");
-
-export const ApiKeyCreated = z
-  .object({
-    id: z.string().openapi({ example: "k_2aF9xQzLmNpRwVbCtYsEuHgJdKiO" }),
-    /** The full key — returned once at creation, never again. */
-    key: z.string().openapi({ example: "hj_9f2kLmQwXyZaBcDeFgHiJkLmNoPqRsTuVwXyZ" }),
-    name: z.string().nullable().openapi({ example: "Claude Code" }),
-    start: z.string().nullable().openapi({ example: "hj_9f2" }),
-    expiresAt: z.iso.datetime().nullable().openapi({ example: "2027-01-15T09:30:00.000Z" }),
-    scopes: z.array(Scope),
-  })
-  .openapi("ApiKeyCreated");
-
-export const ApiKeyResult = z.object({ data: ApiKeyCreated }).openapi("ApiKeyResult", {
-  example: { data: API_KEY_EXAMPLE },
-});
-
-export const Me = z
-  .object({
-    userId: z.string().openapi({ example: "O4q6Rkcv8paDGK8krUsg0a9mBZ2k6FiZ" }),
-    email: z.string().openapi({ example: "you@example.com" }),
-    name: z.string().openapi({ example: "You" }),
-    keyId: z.string().nullable().openapi({ example: "k_2aF9xQzLmNpRwVbCtYsEuHgJdKiO" }),
-    scopes: z.array(Scope),
-  })
-  .openapi("Me");
-
-export const MeResult = z.object({ data: Me }).openapi("MeResult", {
-  example: { data: ME_EXAMPLE },
-});
-
 export type JobStatus = z.infer<typeof JobStatus>;
 export type JobLevel = z.infer<typeof JobLevel>;
 export type Job = z.infer<typeof Job>;
@@ -542,10 +478,6 @@ export type SourceRun = z.infer<typeof SourceRun>;
 export type RunListQuery = z.infer<typeof RunListQuery>;
 export type DashboardSummary = z.infer<typeof DashboardSummary>;
 export type ErrorBody = z.infer<typeof ErrorBody>;
-export type Scope = z.infer<typeof Scope>;
-export type ApiKeyCreate = z.infer<typeof ApiKeyCreate>;
-export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
-export type Me = z.infer<typeof Me>;
 
 export const JobApprove = z
   .object({ level: JobLevel })
@@ -563,10 +495,10 @@ export const DiscoveryAdd = z
 export const DiscoveryCandidate = z
   .object({
     id: z.string(),
-    origin: z.enum(["manual", "crawl"]),
+    origin: z.enum(["manual", "listings"]),
     input: z.string().openapi({ example: "stripe.com" }),
     status: z.enum(["queued", "found", "not_found", "duplicate", "failed"]),
-    platform: z.enum(["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"]).nullable(),
+    platform: z.enum(["greenhouse", "lever", "ashby", "amazon_jobs"]).nullable(),
     board: z.string().nullable(),
     sourceId: z.string().nullable(),
     error: z.string().nullable(),

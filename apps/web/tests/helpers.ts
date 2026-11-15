@@ -2,7 +2,8 @@ import { env, SELF, applyD1Migrations } from "cloudflare:test";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { expect } from "vite-plus/test";
-import { company, ingestRun, job, source, sourceRun, user } from "../schema/db";
+import { account, company, ingestRun, job, source, sourceRun, user } from "../schema/db";
+import { createAuth } from "../worker/auth";
 
 // The hand-maintained migrations (drizzle-kit generate is/was broken — see
 // migrations/README.md) are applied exactly as alchemy applies them, proving
@@ -40,11 +41,49 @@ export async function verifyLatest(email: string) {
   return SELF.fetch(url!, { redirect: "manual" });
 }
 
-/** Sign up, verify, and return the session cookie header value. */
+/** Insert a verified credential user directly (sign-up is owner-only, so
+ * test users bypass the endpoint) then sign in → session cookie. */
+export async function seedVerifiedUser(email: string) {
+  const auth = createAuth(env);
+  const ctx = await auth.$context;
+  const id = `u_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const password = await ctx.password.hash(PASSWORD);
+  const now = new Date();
+  // Raw table inserts bypass the owner-only user.create hook.
+  await db().insert(user).values({
+    id,
+    name: "T",
+    email,
+    emailVerified: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db()
+    .insert(account)
+    .values({
+      id: `acc_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+      userId: id,
+      accountId: id,
+      providerId: "credential",
+      password,
+      createdAt: now,
+      updatedAt: now,
+    });
+}
+
+export async function signIn(email: string) {
+  const r = await SELF.fetch("https://x/api/auth/sign-in/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-captcha-response": "test" },
+    body: JSON.stringify({ email, password: PASSWORD }),
+  });
+  expect(r.status).toBe(200);
+  return r.headers.get("set-cookie") ?? "";
+}
+
 export async function verifiedSessionCookie(email: string) {
-  await signUp(email);
-  const v = await verifyLatest(email);
-  return v.headers.get("set-cookie") ?? "";
+  await seedVerifiedUser(email);
+  return signIn(email);
 }
 
 /** A verified session whose user carries the Better Auth admin role —
@@ -53,17 +92,6 @@ export async function adminSessionCookie(email: string) {
   const cookie = await verifiedSessionCookie(email);
   await drizzle(env.DB).update(user).set({ role: "admin" }).where(eq(user.email, email));
   return cookie;
-}
-
-/** Create an API key for a verified user session; returns the plaintext key. */
-export async function makeKey(cookie: string, scopes: string[], name = "t") {
-  const r = await SELF.fetch("https://x/api/api-keys", {
-    method: "POST",
-    headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ name, scopes, expiresInDays: 30 }),
-  });
-  expect(r.status).toBe(201);
-  return (await r.json<{ data: { key: string } }>()).data.key;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,10 +177,8 @@ export async function seedJob(
       status: input.status ?? "active",
       retiredAt: input.retiredAt ?? null,
       retireReason: input.retireReason ?? null,
-      missedRuns: input.missedRuns ?? 0,
       firstSeenAt: input.firstSeenAt ?? now,
       lastSeenAt: input.lastSeenAt ?? now,
-      lastCheckedAt: input.lastCheckedAt ?? null,
       createdAt: now,
       updatedAt: now,
     });

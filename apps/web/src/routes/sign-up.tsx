@@ -2,13 +2,11 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Banner, Button, Input, Text } from "@cloudflare/kumo";
 import { authClient } from "../lib/auth-client";
-import { loadPublicConfig } from "../lib/public-config";
 import { authErrorFields } from "../lib/auth-errors";
 import { useCaptchaForm } from "../lib/use-captcha-form";
 import AuthCard from "../components/auth-card";
 import { AuthLink } from "../components/auth-link";
 import { FormError } from "../components/form-error";
-import { GoogleSignInButton } from "../components/google-sign-in";
 import { PasswordInput } from "../components/password-input";
 
 export const Route = createFileRoute("/sign-up")({
@@ -16,9 +14,6 @@ export const Route = createFileRoute("/sign-up")({
   beforeLoad: async () => {
     const { data: session } = await authClient.getSession();
     if (session?.user) throw redirect({ to: "/dashboard" });
-    if (!(await loadPublicConfig()).signupEnabled) {
-      throw redirect({ to: "/sign-in", search: { notice: undefined } });
-    }
   },
 });
 
@@ -104,7 +99,6 @@ function SignUp() {
           Create account
         </Button>
       </form>
-      <GoogleSignInButton />
     </AuthCard>
   );
 }

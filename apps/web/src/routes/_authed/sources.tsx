@@ -43,7 +43,6 @@ const PLATFORM_OPTIONS: { label: string; value: SourcePlatform }[] = [
   { label: "Lever", value: "lever" },
   { label: "Ashby", value: "ashby" },
   { label: "Amazon Jobs", value: "amazon_jobs" },
-  { label: "Careers page", value: "careers_page" },
 ];
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -307,12 +306,8 @@ function AddSourceDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (
             items={PLATFORM_OPTIONS}
           />
           <Input
-            label={platform === "careers_page" ? "Listing URL" : "Board"}
-            description={
-              platform === "careers_page"
-                ? "URL of the page that lists the company's open positions"
-                : "Board token / site / board name ('amazon' for Amazon Jobs)"
-            }
+            label="Board"
+            description="Board token / site / board name ('amazon' for Amazon Jobs)"
             value={board}
             onChange={(e) => setBoard(e.target.value)}
             required

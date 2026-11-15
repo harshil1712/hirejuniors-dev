@@ -9,9 +9,9 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 - `packages/db` (`@hirejuniors/db`) — shared Drizzle schema for the jobs pipeline (`company`, `source`, `job`, `ingest_run`, `source_run`), query helpers, and the single D1 migrations dir `packages/db/migrations`.
 - `apps/jobs` (`@hirejuniors/jobs`) — ingest Worker hosting `IngestWorkflow` (weekly cron): platform adapters, classifier, upsert/feed-diff, expiry + link check. Spec: `docs/specs/ingest.md`.
 - SEO gate for the site is `apps/site/scripts/check-dist.ts` (runs in `vp run -r test`).
-- Adding a resource to the app (schema → API → MCP → UI) — follow the `add-resource` skill; it walks the Sources resource end to end.
+- Adding a resource to the app (schema → API → UI) — follow the `add-resource` skill; it walks the Sources resource end to end.
 - `scripts/init.ts` — renames the starter (package scope, worker names, domains, product name). `scripts/cf-token-preflight.sh` — deploy-token check.
-- `apps/web` agent access — one service layer (`worker/services/*`) behind three surfaces: session `/api/{jobs,companies,sources,runs}`, key-gated `/api/v1` + its OpenAPI doc, and MCP at `/mcp` (`worker/mcp.ts`). All resource routes require the admin role (`principal.isAdmin`). Shared zod schemas live in `worker/api/schemas.ts`; principal/scopes in `worker/middleware/principal.ts`. Agent spec: `docs/specs/agent-api.md`; registry entry: `server.json`.
+- `apps/web` — one service layer (`worker/services/*`) behind session `/api/{jobs,companies,sources,runs,dashboard,discovery}`. All resource routes require the admin role (`principal.isAdmin`). Shared zod schemas live in `worker/api/schemas.ts`; principal in `worker/middleware/principal.ts`.
 - `tooling/anti-slop` — vendored Oxlint JS plugin, wired into `vp check`.
 - `alchemy.run.ts` — all infrastructure (Alchemy IaC). No resource is created any other way.
 - `project.config.ts` — single source for names/domains (name, productName, domain, appSubdomain, emailFrom).
@@ -55,7 +55,6 @@ Hire Juniors is a job board for junior roles and internships, built on the fastf
 - **No `vi.mock`** — the anti-slop plugin forbids module mocking; tests use real seams (service bindings, test env vars).
 - **Email verification required** before sign-in; Turnstile (prod widget, test keys elsewhere) guards sign-up/sign-in/password-reset.
 - **Admin via Better Auth's admin plugin** — no hand-rolled admin API; `OWNER_ADMIN_EMAIL` bootstraps the first admin.
-- **Agent access** — API keys via `@better-auth/api-key` (created server-side; permissions are a server-only property), MCP via the SDK's own `createMcpHandler` (not `agents`, not `@hono/mcp`), stateless. One zod schema set feeds OpenAPI + MCP. No OAuth, so ChatGPT/Claude.ai web connectors can't connect yet.
 
 <!--VITE PLUS START-->
 

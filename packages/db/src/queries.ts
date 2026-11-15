@@ -34,21 +34,6 @@ export function expirableJobs(db: Db, now: Date) {
     .where(and(eq(job.status, "active"), lt(job.validThrough, now)));
 }
 
-/**
- * Ids of active jobs due for a link check — never-checked first, then oldest
- * `last_checked_at`. Selected once per run (workflow `linkcheck:select` step)
- * and fanned out into 40-id slices; stamping rows mid-run can't skip or
- * re-pick them.
- */
-export function jobsForLinkCheck(db: Db, limit: number) {
-  return db
-    .select({ id: job.id })
-    .from(job)
-    .where(eq(job.status, "active"))
-    .orderBy(sql`${job.lastCheckedAt} IS NULL DESC`, asc(job.lastCheckedAt))
-    .limit(limit);
-}
-
 export function finishIngestRun(
   db: Db,
   runId: string,

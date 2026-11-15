@@ -9,7 +9,7 @@ interface Env {
    * applied with `applyD1Migrations` in tests. */
   /** Workers AI binding — clef-flash / clef / clairic (spec §Infra). */
   AI: Ai;
-  /** Browser Run binding — links/markdown quick actions (spec §Browser Run). */
+  /** Browser Run binding — links quick action (spec §Browser Run). */
   BROWSER: BrowserRun;
   TEST_MIGRATIONS?: import("cloudflare:test").D1Migration[];
 }
