@@ -79,6 +79,9 @@ export const Web = Cloudflare.Website.Vite(
       // Custom domains only on the prod stage — dev/preview stages run on
       // workers.dev preview URLs and must never claim the zone.
       domain: isProd && !PREVIEW_NAME ? { name: APP_DOMAIN } : undefined,
+      // Prod is served on the custom domain only; version preview URLs stay
+      // on for PR previews.
+      workersDev: isProd && !PREVIEW_NAME ? { enabled: false, previewsEnabled: true } : undefined,
       preview: PREVIEW_NAME ? { of: `${PROJECT.name}-web`, name: PREVIEW_NAME } : undefined,
       assets: {
         notFoundHandling: "single-page-application" as const,
@@ -118,6 +121,9 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
     isProd && !PREVIEW_NAME
       ? { name: PROJECT.domain, redirects: [`www.${PROJECT.domain}`] }
       : undefined,
+  // Apex only on prod (no duplicate workers.dev copy of the site); version
+  // preview URLs stay on for PR previews.
+  workersDev: isProd && !PREVIEW_NAME ? { enabled: false, previewsEnabled: true } : undefined,
   preview: PREVIEW_NAME ? { of: `${PROJECT.name}-site`, name: PREVIEW_NAME } : undefined,
   dev: { port: 1337, strictPort: true },
   env: {
@@ -138,6 +144,8 @@ export const Jobs = PREVIEW_NAME
         return {
           name: `${PROJECT.name}-jobs`,
           main: "./apps/jobs/src/index.ts",
+          // No HTTP surface — no workers.dev URL on prod.
+          workersDev: isProd ? false : undefined,
           // Explicit port so the jobs worker never races the web worker's 1338.
           dev: { port: 1339, strictPort: true },
           compatibility: { date: "2026-10-01" },
