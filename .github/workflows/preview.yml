@@ -35,7 +35,7 @@ jobs:
       - name: Smoke preview URLs
         if: steps.secrets.outputs.missing != 'true'
         run: |
-          W="https://pr-${{ github.event.pull_request.number }}-hirejuniors-web.${{ secrets.WORKERS_DEV_SUBDOMAIN }}.workers.dev"
+          W="https://pr-${{ github.event.pull_request.number }}.app.hirejuniors.dev"
           S="https://pr-${{ github.event.pull_request.number }}-hirejuniors-site.${{ secrets.WORKERS_DEV_SUBDOMAIN }}.workers.dev"
           # The preview web worker is Access-gated like prod — expect a 302 to
           # the Access login (don't follow redirects); the site stays 200.

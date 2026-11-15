@@ -40,7 +40,7 @@ accept only Workers Scripts Write. Secrets Store is for Alchemy's state store
 | `CLOUDFLARE_API_TOKEN`  | see the token table above                           | prod: environment; preview: repo |
 | `CLOUDFLARE_ACCOUNT_ID` | Account ID (dashboard → overview)                   |                                  |
 | `CLOUDFLARE_ZONE_ID`    | Zone ID for the apex domain                         | Prod only — custom domains       |
-| `WORKERS_DEV_SUBDOMAIN` | your `*.workers.dev` subdomain                      | Used to build preview URLs       |
+| `WORKERS_DEV_SUBDOMAIN` | your `*.workers.dev` subdomain                      | Used to build site preview URLs  |
 | `OWNER_ADMIN_EMAIL`     | the email Cloudflare Access admits to the dashboard |                                  |
 
 **First deploy:** a new project's first PR can't get a Worker Preview —
@@ -52,3 +52,8 @@ Alchemy state lives in the account (`Cloudflare.state()`: the `alchemy-state-sto
 plus its Secrets Store secrets), so no extra state secrets are needed.
 
 PR previews need only `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` + `WORKERS_DEV_SUBDOMAIN`.
+
+Preview URLs: the dashboard at `https://pr-<n>.app.hirejuniors.dev` (custom-domain Previews on
+`app.`, behind the same Access policy; Cloudflare issues the `*.app.hirejuniors.dev` certificate
+when the first Preview is created, which can take a few minutes), the public site at
+`https://pr-<n>-hirejuniors-site.<subdomain>.workers.dev` (workers.dev answers `noindex`).

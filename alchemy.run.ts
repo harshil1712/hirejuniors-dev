@@ -78,10 +78,11 @@ export const Web = Cloudflare.Website.Vite(
       },
       // Custom domains only on the prod stage — dev/preview stages run on
       // workers.dev preview URLs and must never claim the zone.
-      domain: isProd && !PREVIEW_NAME ? { name: APP_DOMAIN } : undefined,
-      // Prod is served on the custom domain only; version preview URLs stay
-      // on for PR previews.
-      workersDev: isProd && !PREVIEW_NAME ? { enabled: false, previewsEnabled: true } : undefined,
+      // PR previews are served on the custom domain too
+      // (`pr-<n>.app.<domain>`, behind the same Access policy), so the web
+      // worker has no workers.dev URLs at all on prod.
+      domain: isProd && !PREVIEW_NAME ? { name: APP_DOMAIN, previews: true } : undefined,
+      workersDev: isProd && !PREVIEW_NAME ? false : undefined,
       preview: PREVIEW_NAME ? { of: `${PROJECT.name}-web`, name: PREVIEW_NAME } : undefined,
       assets: {
         notFoundHandling: "single-page-application" as const,
@@ -121,8 +122,9 @@ export const Site = Cloudflare.Website.Astro(`${PROJECT.name}-site`, {
     isProd && !PREVIEW_NAME
       ? { name: PROJECT.domain, redirects: [`www.${PROJECT.domain}`] }
       : undefined,
-  // Apex only on prod (no duplicate workers.dev copy of the site); version
-  // preview URLs stay on for PR previews.
+  // Apex only on prod (no duplicate workers.dev copy of the site). Site
+  // previews stay on workers.dev: those answer `X-Robots-Tag: noindex`, and
+  // a `*.<domain>` preview wildcard would collide with app./jobs./www.
   workersDev: isProd && !PREVIEW_NAME ? { enabled: false, previewsEnabled: true } : undefined,
   preview: PREVIEW_NAME ? { of: `${PROJECT.name}-site`, name: PREVIEW_NAME } : undefined,
   dev: { port: 1337, strictPort: true },
