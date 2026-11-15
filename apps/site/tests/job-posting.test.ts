@@ -102,4 +102,36 @@ describe("buildJobPosting", () => {
     const jp = buildJobPosting({ ...base, descriptionHtml: null });
     expect(jp.description).toBe("Build things.");
   });
+
+  it("emits baseSalary when all four fields are present", () => {
+    const jp = buildJobPosting({
+      ...base,
+      salaryMin: 55000,
+      salaryMax: 70000,
+      salaryCurrency: "EUR",
+      salaryPeriod: "YEAR",
+    });
+    expect(jp.baseSalary).toEqual({
+      "@type": "MonetaryAmount",
+      currency: "EUR",
+      value: {
+        "@type": "QuantitativeValue",
+        minValue: 55000,
+        maxValue: 70000,
+        unitText: "YEAR",
+      },
+    });
+  });
+
+  it("omits baseSalary when any salary field is missing", () => {
+    for (const patch of [
+      { salaryMin: 55000, salaryMax: 70000, salaryCurrency: "EUR" }, // no period
+      { salaryMin: 55000, salaryCurrency: "EUR", salaryPeriod: "YEAR" as const }, // no max
+      { salaryMax: 70000, salaryCurrency: "EUR", salaryPeriod: "YEAR" as const },
+      { salaryMin: 55000, salaryMax: 70000, salaryPeriod: "YEAR" as const }, // no currency
+    ]) {
+      const jp = buildJobPosting({ ...base, ...patch });
+      expect("baseSalary" in jp).toBe(false);
+    }
+  });
 });

@@ -18,6 +18,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
+import { Route as AuthedDiscoveryRouteImport } from './routes/_authed/discovery'
 import { Route as AuthedJobsRouteImport } from './routes/_authed/jobs'
 import { Route as AuthedRunsRouteImport } from './routes/_authed/runs'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed/settings'
@@ -69,6 +70,11 @@ const AuthedDashboardRoute = AuthedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedDiscoveryRoute = AuthedDiscoveryRouteImport.update({
+  id: '/discovery',
+  path: '/discovery',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedJobsRoute = AuthedJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRoute
   '/dashboard': typeof AuthedDashboardRoute
+  '/discovery': typeof AuthedDiscoveryRoute
   '/jobs': typeof AuthedJobsRoute
   '/runs': typeof AuthedRunsRoute
   '/settings': typeof AuthedSettingsRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRoute
   '/dashboard': typeof AuthedDashboardRoute
+  '/discovery': typeof AuthedDiscoveryRoute
   '/jobs': typeof AuthedJobsRoute
   '/runs': typeof AuthedRunsRoute
   '/settings': typeof AuthedSettingsRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/admin': typeof AuthedAdminRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
+  '/_authed/discovery': typeof AuthedDiscoveryRoute
   '/_authed/jobs': typeof AuthedJobsRoute
   '/_authed/runs': typeof AuthedRunsRoute
   '/_authed/settings': typeof AuthedSettingsRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin'
     | '/dashboard'
+    | '/discovery'
     | '/jobs'
     | '/runs'
     | '/settings'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin'
     | '/dashboard'
+    | '/discovery'
     | '/jobs'
     | '/runs'
     | '/settings'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/admin'
     | '/_authed/dashboard'
+    | '/_authed/discovery'
     | '/_authed/jobs'
     | '/_authed/runs'
     | '/_authed/settings'
@@ -277,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/discovery': {
+      id: '/_authed/discovery'
+      path: '/discovery'
+      fullPath: '/discovery'
+      preLoaderRoute: typeof AuthedDiscoveryRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/jobs': {
       id: '/_authed/jobs'
       path: '/jobs'
@@ -325,6 +344,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedAdminRoute: typeof AuthedAdminRoute
   AuthedDashboardRoute: typeof AuthedDashboardRoute
+  AuthedDiscoveryRoute: typeof AuthedDiscoveryRoute
   AuthedJobsRoute: typeof AuthedJobsRoute
   AuthedRunsRoute: typeof AuthedRunsRoute
   AuthedSettingsRoute: typeof AuthedSettingsRoute
@@ -336,6 +356,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRoute: AuthedAdminRoute,
   AuthedDashboardRoute: AuthedDashboardRoute,
+  AuthedDiscoveryRoute: AuthedDiscoveryRoute,
   AuthedJobsRoute: AuthedJobsRoute,
   AuthedRunsRoute: AuthedRunsRoute,
   AuthedSettingsRoute: AuthedSettingsRoute,

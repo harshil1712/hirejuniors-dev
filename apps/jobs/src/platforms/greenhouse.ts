@@ -46,6 +46,26 @@ export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, Greenhous
     const deduped = jobs.filter((j) => (seen.has(j.id) ? false : (seen.add(j.id), true)));
     return this.toListings({ jobs: deduped }, src);
   },
+  async probe(fetcher, board) {
+    try {
+      const res = await fetcher(`${API}/${board}/jobs`);
+      if (!res.ok) return { ok: false };
+      responseSchema.parse(await res.json());
+      let companyName: string | undefined;
+      try {
+        const meta = await fetcher(`${API}/${board}`);
+        if (meta.ok) {
+          const parsed = z.object({ name: z.string() }).safeParse(await meta.json());
+          companyName = parsed.success ? parsed.data.name : undefined;
+        }
+      } catch {
+        // meta is best-effort — the listings answer already proved the board
+      }
+      return { ok: true, companyName };
+    } catch {
+      return { ok: false, networkError: true };
+    }
+  },
   toListings(payload, _src): RawListing[] {
     const { jobs } = responseSchema.parse(payload);
     return jobs.map((j) => ({

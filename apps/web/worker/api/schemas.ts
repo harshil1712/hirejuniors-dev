@@ -85,7 +85,9 @@ const ME_EXAMPLE = {
 // Jobs
 // ---------------------------------------------------------------------------
 
-export const JobStatus = z.enum(["active", "retired"]).openapi("JobStatus", { example: "active" });
+export const JobStatus = z
+  .enum(["pending", "active", "review", "rejected", "retired"])
+  .openapi("JobStatus", { example: "active" });
 
 export const JobLevel = z
   .enum(["internship", "apprenticeship", "graduate", "junior"])
@@ -96,7 +98,7 @@ export const Job = z
     id: z.string().openapi({ example: JOB_EXAMPLE.id }),
     slug: z.string().openapi({ example: JOB_EXAMPLE.slug }),
     title: z.string().openapi({ example: JOB_EXAMPLE.title }),
-    level: JobLevel,
+    level: JobLevel.nullable(),
     employmentType: z.string().nullable().openapi({ example: "INTERN" }),
     workplace: z.string().nullable().openapi({ example: "hybrid" }),
     locationRaw: z.string().openapi({ example: JOB_EXAMPLE.locationRaw }),
@@ -115,9 +117,26 @@ export const Job = z
     status: JobStatus,
     retiredAt: z.iso.datetime().nullable().openapi({ example: null }),
     retireReason: z
-      .enum(["missing_from_feed", "link_dead", "expired", "manual"])
+      .enum(["missing_from_feed", "link_dead", "closed_page", "expired", "manual"])
       .nullable()
       .openapi({ example: null }),
+    classifiedAt: z.iso.datetime().nullable().openapi({ example: null }),
+    classifiedBy: z
+      .enum(["rules", "clef-flash", "clef", "admin"])
+      .nullable()
+      .openapi({ example: "clef-flash" }),
+    classifierConfidence: z.number().nullable().openapi({ example: null }),
+    rejectReason: z
+      .enum(["not_early_career", "not_tech", "experience", "admin"])
+      .nullable()
+      .openapi({ example: null }),
+    reviewReason: z.string().nullable().openapi({ example: null }),
+    minYearsExperience: z.number().int().nullable().openapi({ example: null }),
+    salaryMin: z.number().int().nullable().openapi({ example: null }),
+    salaryMax: z.number().int().nullable().openapi({ example: null }),
+    salaryCurrency: z.string().nullable().openapi({ example: null }),
+    salaryPeriod: z.enum(["HOUR", "WEEK", "MONTH", "YEAR"]).nullable().openapi({ example: null }),
+    graduationYear: z.number().int().nullable().openapi({ example: null }),
     missedRuns: z.number().int().openapi({ example: 0 }),
     createdAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.firstSeenAt }),
     updatedAt: z.iso.datetime().openapi({ example: JOB_EXAMPLE.lastSeenAt }),
@@ -151,7 +170,7 @@ export const JobListQuery = z
   .openapi("JobListQuery");
 
 export const JobUpdate = z
-  .object({ status: JobStatus })
+  .object({ status: z.enum(["active", "retired"]) })
   .openapi("JobUpdate", { example: { status: "retired" } });
 
 export const JobList = z
@@ -246,6 +265,10 @@ export const Source = z
     config: z.string().openapi({ example: "{}" }),
     includeAll: z.boolean().openapi({ example: false }),
     enabled: z.boolean().openapi({ example: true }),
+    origin: z.enum(["seed", "manual", "discovered"]).openapi({ example: "manual" }),
+    trial: z.boolean().openapi({ example: false }),
+    disabledReason: z.enum(["no_junior_roles", "manual"]).nullable().openapi({ example: null }),
+    lastFetched: z.number().int().nullable().openapi({ example: 12 }),
     lastRunAt: z.iso.datetime().nullable().openapi({ example: SOURCE_EXAMPLE.lastRunAt }),
     lastStatus: z.enum(["succeeded", "failed"]).nullable().openapi({ example: "succeeded" }),
     lastError: z.string().nullable().openapi({ example: null }),
@@ -354,6 +377,12 @@ export const IngestRun = z
     updated: z.number().int().openapi({ example: 120 }),
     reactivated: z.number().int().openapi({ example: 2 }),
     retired: z.number().int().openapi({ example: 9 }),
+    classified: z.number().int().openapi({ example: 40 }),
+    rejected: z.number().int().openapi({ example: 5 }),
+    review: z.number().int().openapi({ example: 3 }),
+    discovered: z.number().int().openapi({ example: 7 }),
+    aiInputTokens: z.number().int().openapi({ example: 12500 }),
+    aiOutputTokens: z.number().int().openapi({ example: 800 }),
     error: z.string().nullable().openapi({ example: null }),
   })
   .openapi("IngestRun");
@@ -515,3 +544,45 @@ export type Scope = z.infer<typeof Scope>;
 export type ApiKeyCreate = z.infer<typeof ApiKeyCreate>;
 export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
 export type Me = z.infer<typeof Me>;
+
+export const JobApprove = z
+  .object({ level: JobLevel })
+  .openapi("JobApprove", { example: { level: "junior" } });
+
+export const DiscoveryAdd = z
+  .object({
+    domains: z
+      .array(z.string().regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "valid hostname"))
+      .min(1)
+      .max(500),
+  })
+  .openapi("DiscoveryAdd", { example: { domains: ["stripe.com", "figma.com"] } });
+
+export const DiscoveryCandidate = z
+  .object({
+    id: z.string(),
+    origin: z.enum(["manual", "crawl"]),
+    input: z.string().openapi({ example: "stripe.com" }),
+    status: z.enum(["queued", "found", "not_found", "duplicate", "failed"]),
+    platform: z.enum(["greenhouse", "lever", "ashby", "amazon_jobs"]).nullable(),
+    board: z.string().nullable(),
+    sourceId: z.string().nullable(),
+    error: z.string().nullable(),
+    attempts: z.number().int(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .openapi("DiscoveryCandidate");
+
+export const DiscoveryList = z
+  .object({
+    data: z.array(DiscoveryCandidate).openapi({ example: [] }),
+    nextCursor: z.string().nullable().openapi({ example: null }),
+  })
+  .openapi("DiscoveryList");
+
+export const DiscoveryAddResult = z
+  .object({
+    data: z.object({ added: z.number().int() }).openapi({ example: { added: 3 } }),
+  })
+  .openapi("DiscoveryAddResult");

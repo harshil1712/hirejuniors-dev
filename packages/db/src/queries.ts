@@ -77,16 +77,34 @@ export function finishIngestRun(
     .where(eq(ingestRun.id, runId));
 }
 
-export function markSourceResult(db: Db, sourceId: string, ok: boolean, error?: string) {
-  return db
+export function markSourceResult(
+  db: Db,
+  sourceId: string,
+  ok: boolean,
+  error?: string,
+  lastFetched?: number,
+) {
+  const set: Partial<typeof source.$inferInsert> = {
+    lastRunAt: new Date(),
+    lastStatus: ok ? "succeeded" : "failed",
+    lastError: ok ? null : (error ?? "unknown error"),
+    updatedAt: new Date(),
+  };
+  if (lastFetched !== undefined) set.lastFetched = lastFetched;
+  return db.update(source).set(set).where(eq(source.id, sourceId));
+}
+
+/** Sources a run ingests: enabled, plus no_junior_roles-disabled sources due
+ * for their 28-day retry (manual disables are never retried). Retry-due rows
+ * are re-enabled as trial in the same step — the spec treats them "as
+ * enabled, trial = true" so trialEval decides their fate again. */
+export async function ingestibleSources(db: Db, now = new Date()) {
+  const retryBefore = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+  await db
     .update(source)
-    .set({
-      lastRunAt: new Date(),
-      lastStatus: ok ? "succeeded" : "failed",
-      lastError: ok ? null : (error ?? "unknown error"),
-      updatedAt: new Date(),
-    })
-    .where(eq(source.id, sourceId));
+    .set({ enabled: true, trial: true, disabledReason: null, updatedAt: now })
+    .where(and(eq(source.disabledReason, "no_junior_roles"), lt(source.lastRunAt, retryBefore)));
+  return db.select({ id: source.id }).from(source).where(eq(source.enabled, true));
 }
 
 // ---- public job-board reads (apps/site) ----
@@ -150,12 +168,13 @@ export function countActiveJobs(db: Db, f: JobFilters = {}) {
 }
 
 /** One row per level with its active count (hubs, llms.txt, sitemap). */
-export function levelCounts(db: Db) {
-  return db
+export async function levelCounts(db: Db) {
+  const rows = await db
     .select({ level: job.level, n: count() })
     .from(job)
     .where(eq(job.status, "active"))
     .groupBy(job.level);
+  return rows as { level: NonNullable<(typeof job.$inferSelect)["level"]>; n: number }[];
 }
 
 /** One row per country_code with its active count; null codes last. */
@@ -169,12 +188,17 @@ export function countryCounts(db: Db) {
 }
 
 /** Level x country matrix for the combination hubs / sitemap. */
-export function levelCountryCounts(db: Db) {
-  return db
+export async function levelCountryCounts(db: Db) {
+  const rows = await db
     .select({ level: job.level, countryCode: job.countryCode, n: count() })
     .from(job)
     .where(eq(job.status, "active"))
     .groupBy(job.level, job.countryCode);
+  return rows as {
+    level: NonNullable<(typeof job.$inferSelect)["level"]>;
+    countryCode: string | null;
+    n: number;
+  }[];
 }
 
 /** Job detail — any status (410 page needs the retired row) + company. */

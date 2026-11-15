@@ -25,7 +25,9 @@ type ApiBody =
   | CompanyUpdate
   | SourceCreate
   | SourceUpdate
-  | SourcePreview;
+  | SourcePreview
+  | { level: string }
+  | { domains: string[] };
 
 async function request<T>(method: string, path: string, body?: ApiBody): Promise<T> {
   const init: RequestInit = { method };
@@ -86,9 +88,47 @@ export function getJob(id: string): Promise<Job> {
   return request<{ data: Job }>("GET", `/api/jobs/${encodeURIComponent(id)}`).then((r) => r.data);
 }
 
-export function setJobStatus(id: string, status: JobStatus): Promise<Job> {
+export function setJobStatus(id: string, status: "active" | "retired"): Promise<Job> {
   const body: JobUpdate = { status };
   return request<{ data: Job }>("PATCH", `/api/jobs/${encodeURIComponent(id)}`, body).then(
+    (r) => r.data,
+  );
+}
+
+export function approveJob(id: string, level: string): Promise<Job> {
+  return request<{ data: Job }>("POST", `/api/jobs/${encodeURIComponent(id)}/approve`, {
+    level,
+  }).then((r) => r.data);
+}
+
+export function rejectJob(id: string): Promise<Job> {
+  return request<{ data: Job }>("POST", `/api/jobs/${encodeURIComponent(id)}/reject`).then(
+    (r) => r.data,
+  );
+}
+
+export interface DiscoveryCandidate {
+  id: string;
+  origin: "manual" | "crawl";
+  input: string;
+  status: "queued" | "found" | "not_found" | "duplicate" | "failed";
+  platform: string | null;
+  board: string | null;
+  sourceId: string | null;
+  error: string | null;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function listDiscovery(
+  status?: string,
+): Promise<{ data: DiscoveryCandidate[]; nextCursor: string | null }> {
+  return request("GET", `/api/discovery${status ? `?status=${status}` : ""}`);
+}
+
+export function addDiscovery(domains: string[]): Promise<{ added: number }> {
+  return request<{ data: { added: number } }>("POST", "/api/discovery", { domains }).then(
     (r) => r.data,
   );
 }

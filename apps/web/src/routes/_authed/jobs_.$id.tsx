@@ -1,13 +1,20 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Banner, Button, LayerCard, Loader, Text } from "@cloudflare/kumo";
+import { Badge, Banner, Button, LayerCard, Loader, Select, Text } from "@cloudflare/kumo";
 import { ArrowSquareOut, WarningCircle } from "@phosphor-icons/react";
 import type { Job } from "../../../worker/api/schemas";
-import { getJob, setJobStatus } from "../../lib/admin-api";
+import { approveJob, getJob, rejectJob, setJobStatus } from "../../lib/admin-api";
 import { toast } from "../../lib/toast";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { PageHeader } from "../../components/page-header";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+
+const LEVEL_OPTIONS = [
+  { label: "Internship", value: "internship" },
+  { label: "Apprenticeship", value: "apprenticeship" },
+  { label: "Graduate", value: "graduate" },
+  { label: "Junior", value: "junior" },
+];
 
 export const Route = createFileRoute("/_authed/jobs_/$id")({ component: JobDetail });
 
@@ -35,6 +42,7 @@ function JobDetail() {
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [approveLevel, setApproveLevel] = useState("junior");
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -78,6 +86,49 @@ function JobDetail() {
               >
                 Apply
               </Button>
+              {(job.status === "review" || job.status === "rejected") && (
+                <>
+                  <Select
+                    label="Level"
+                    value={approveLevel}
+                    onValueChange={(v) => v && setApproveLevel(v)}
+                    items={LEVEL_OPTIONS}
+                    className="w-36"
+                  />
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          setJob(await approveJob(id, approveLevel));
+                          toast.success("Job approved");
+                        } catch (e) {
+                          toast.error("Approve failed", (e as Error).message);
+                        }
+                      })();
+                    }}
+                  >
+                    Approve
+                  </Button>
+                </>
+              )}
+              {job.status !== "rejected" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        setJob(await rejectJob(id));
+                        toast.success("Job rejected");
+                      } catch (e) {
+                        toast.error("Reject failed", (e as Error).message);
+                      }
+                    })();
+                  }}
+                >
+                  Reject
+                </Button>
+              )}
               <Button
                 variant={retire ? "destructive" : "primary"}
                 onClick={() => setConfirmOpen(true)}
@@ -141,6 +192,28 @@ function JobDetail() {
                 <Field label="Last checked" value={fmt(job.lastCheckedAt)} />
                 <Field label="Retired" value={fmt(job.retiredAt)} />
                 <Field label="Missed runs" value={String(job.missedRuns)} />
+                <Field label="Classified by" value={job.classifiedBy} />
+                <Field label="Classified at" value={fmt(job.classifiedAt)} />
+                <Field
+                  label="Classifier confidence"
+                  value={
+                    job.classifierConfidence == null ? null : job.classifierConfidence.toFixed(2)
+                  }
+                />
+                <Field label="Reject reason" value={job.rejectReason} />
+                <Field label="Review reason" value={job.reviewReason} />
+                <Field
+                  label="Salary"
+                  value={
+                    job.salaryMin && job.salaryMax
+                      ? `${job.salaryCurrency ?? ""} ${job.salaryMin}–${job.salaryMax} / ${job.salaryPeriod ?? "?"}`
+                      : null
+                  }
+                />
+                <Field
+                  label="Grad year"
+                  value={job.graduationYear ? String(job.graduationYear) : null}
+                />
                 <Field label="Slug" value={job.slug} />
                 <Field label="Company" value={`${job.company.name} (${job.company.slug})`} />
                 <Field

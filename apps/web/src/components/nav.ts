@@ -1,4 +1,5 @@
 import {
+  Binoculars,
   Briefcase,
   Gear,
   House,
@@ -10,7 +11,7 @@ import {
 
 export interface NavItem {
   label: string;
-  to: "/dashboard" | "/jobs" | "/sources" | "/runs" | "/settings" | "/admin";
+  to: "/dashboard" | "/jobs" | "/sources" | "/discovery" | "/runs" | "/settings" | "/admin";
   icon: Icon;
   adminOnly?: boolean;
 }
@@ -20,6 +21,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: House },
   { label: "Jobs", to: "/jobs", icon: Briefcase },
   { label: "Sources", to: "/sources", icon: Stack },
+  { label: "Discovery", to: "/discovery", icon: Binoculars },
   { label: "Runs", to: "/runs", icon: PlayCircle },
   { label: "Settings", to: "/settings", icon: Gear },
   { label: "Admin", to: "/admin", icon: ShieldCheck, adminOnly: true },

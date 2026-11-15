@@ -67,6 +67,10 @@ const jsonLd = retired
         postedAt: job.postedAt,
         firstSeenAt: job.firstSeenAt,
         validThrough: job.validThrough,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        salaryCurrency: job.salaryCurrency,
+        salaryPeriod: job.salaryPeriod,
         externalId: job.externalId,
         canonicalUrl: canonical,
         company,
@@ -122,6 +126,28 @@ const workplaceLabel = job.workplace === "remote" ? "remote" : job.workplace ===
             <dt>Posted</dt><dd><time datetime={isoDate(job.postedAt ?? job.firstSeenAt)}>{formatDate(job.postedAt ?? job.firstSeenAt)}</time></dd>
             {job.validThrough && (
               <><dt>Closes</dt><dd><time datetime={isoDate(job.validThrough)}>{formatDate(job.validThrough)}</time></dd></>
+            )}
+            {job.salaryMin && job.salaryMax && job.salaryCurrency && (
+              <>
+                <dt>Salary</dt>
+                <dd>
+                  {new Intl.NumberFormat("en", {
+                    style: "currency",
+                    currency: job.salaryCurrency,
+                    maximumFractionDigits: 0,
+                  }).format(job.salaryMin)}
+                  {" – "}
+                  {new Intl.NumberFormat("en", {
+                    style: "currency",
+                    currency: job.salaryCurrency,
+                    maximumFractionDigits: 0,
+                  }).format(job.salaryMax)}{" "}
+                  / {job.salaryPeriod === "HOUR" ? "hour" : job.salaryPeriod === "WEEK" ? "week" : job.salaryPeriod === "MONTH" ? "month" : "year"}
+                </dd>
+              </>
+            )}
+            {job.graduationYear && (
+              <><dt>Grad year</dt><dd>{job.graduationYear}</dd></>
             )}
           </dl>
         </div>

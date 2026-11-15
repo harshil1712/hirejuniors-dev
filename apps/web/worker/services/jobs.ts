@@ -40,6 +40,17 @@ function toApi(row: { job: typeof job.$inferSelect; company: CompanyBrief }): Jo
     status: j.status,
     retiredAt: iso(j.retiredAt),
     retireReason: j.retireReason,
+    classifiedAt: iso(j.classifiedAt),
+    classifiedBy: j.classifiedBy,
+    classifierConfidence: j.classifierConfidence,
+    rejectReason: j.rejectReason,
+    reviewReason: j.reviewReason,
+    minYearsExperience: j.minYearsExperience,
+    salaryMin: j.salaryMin,
+    salaryMax: j.salaryMax,
+    salaryCurrency: j.salaryCurrency,
+    salaryPeriod: j.salaryPeriod,
+    graduationYear: j.graduationYear,
     missedRuns: j.missedRuns,
     createdAt: j.createdAt.toISOString(),
     updatedAt: j.updatedAt.toISOString(),
@@ -117,6 +128,43 @@ export async function get(db: Db, id: string): Promise<Job> {
     .get();
   if (!row) throw new ServiceError("not_found", `No such job: ${id}`);
   return toApi(row);
+}
+
+/** Approve a review/rejected job → active with an admin-picked level.
+ * `classified_by = 'admin'` makes the decision sticky across content changes. */
+export async function approve(db: Db, id: string, level: Job["level"]): Promise<Job> {
+  const now = new Date();
+  await get(db, id); // not_found
+  await db
+    .update(job)
+    .set({
+      status: "active",
+      level,
+      classifiedBy: "admin",
+      classifiedAt: now,
+      rejectReason: null,
+      reviewReason: null,
+      updatedAt: now,
+    })
+    .where(eq(job.id, id));
+  return get(db, id);
+}
+
+/** Reject → status rejected, reason admin (sticky like approve). */
+export async function reject(db: Db, id: string): Promise<Job> {
+  const now = new Date();
+  await get(db, id); // not_found
+  await db
+    .update(job)
+    .set({
+      status: "rejected",
+      rejectReason: "admin",
+      classifiedBy: "admin",
+      classifiedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(job.id, id));
+  return get(db, id);
 }
 
 /** Manual retire/restore. Manual retirement is sticky — the ingest diff

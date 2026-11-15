@@ -55,3 +55,13 @@ export function listing(over: Partial<RawListing> = {}): RawListing {
     ...over,
   };
 }
+
+/** Fake AI binding — throws if called; swap in per-test fakes instead. */
+export const fakeAi: import("../src/ai").AiModels = {
+  decide() {
+    throw new Error("ai not expected in this test");
+  },
+  extract() {
+    throw new Error("ai not expected in this test");
+  },
+};

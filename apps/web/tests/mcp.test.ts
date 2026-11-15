@@ -76,7 +76,7 @@ describe("/mcp", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBeTruthy();
   });
 
-  it("SDK client (2026 protocol): tools/list → 13 tools + annotations; whoami", async () => {
+  it("SDK client (2026 protocol): tools/list → 17 tools + annotations; whoami", async () => {
     const key = await makeKey(`mcp1-${crypto.randomUUID()}@t.dev`, ["jobs:read", "jobs:write"]);
     const { client, transport } = await connect(key);
     {
@@ -87,6 +87,10 @@ describe("/mcp", () => {
         [
           "create_company",
           "create_source",
+          "discovery_add",
+          "discovery_list",
+          "jobs_approve",
+          "jobs_reject",
           "get_job",
           "get_run",
           "list_companies",
@@ -109,6 +113,7 @@ describe("/mcp", () => {
         "list_companies",
         "list_runs",
         "get_run",
+        "discovery_list",
         "whoami",
       ]) {
         expect(ann(n)).toMatchObject({ readOnlyHint: true, idempotentHint: true });

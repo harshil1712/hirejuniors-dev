@@ -17,7 +17,7 @@ export async function GET(context: APIContext) {
       title: `${j.title} at ${j.companyName}`,
       link: `/job/${j.slug}/`,
       pubDate: j.postedAt ?? j.firstSeenAt,
-      description: `${levelLabelLower(j.level)} · ${j.locationRaw}`,
+      description: `${j.level ? `${levelLabelLower(j.level)} · ` : ""}${j.locationRaw}`,
     })),
   });
   res.headers.set("cache-control", CACHE_OK);

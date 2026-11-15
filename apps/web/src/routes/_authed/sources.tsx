@@ -123,6 +123,8 @@ function Sources() {
                 <Table.Head className="w-40">Company</Table.Head>
                 <Table.Head className="w-28">Platform</Table.Head>
                 <Table.Head className="w-32">Board</Table.Head>
+                <Table.Head className="w-28">Origin</Table.Head>
+                <Table.Head className="w-24">Trial</Table.Head>
                 <Table.Head className="w-24">Enabled</Table.Head>
                 <Table.Head className="w-24">All jobs</Table.Head>
                 <Table.Head className="w-32">Last run</Table.Head>
@@ -142,6 +144,15 @@ function Sources() {
                       {s.board}
                     </Text>
                   </Table.Cell>
+                  <Table.Cell>
+                    {s.origin}
+                    {s.disabledReason ? (
+                      <Text variant="secondary" size="sm">
+                        {s.disabledReason}
+                      </Text>
+                    ) : null}
+                  </Table.Cell>
+                  <Table.Cell>{s.trial ? "Yes" : "No"}</Table.Cell>
                   <Table.Cell>
                     <Switch
                       aria-label={`${s.enabled ? "Disable" : "Enable"} ${s.board}`}

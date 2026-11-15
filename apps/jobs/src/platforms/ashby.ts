@@ -39,6 +39,16 @@ export const ashby: PlatformAdapter<z.infer<typeof configSchema>, AshbyPayload> 
     if (!res.ok) throw new Error(`ashby ${res.status} for board ${src.board}`);
     return this.toListings(await res.json(), src);
   },
+  async probe(fetcher, board) {
+    try {
+      const res = await fetcher(`https://api.ashbyhq.com/posting-api/job-board/${board}`);
+      if (!res.ok) return { ok: false };
+      z.object({ jobs: z.array(z.object({ id: z.string() })) }).parse(await res.json());
+      return { ok: true };
+    } catch {
+      return { ok: false, networkError: true };
+    }
+  },
   toListings(payload, _src): RawListing[] {
     const { jobs } = responseSchema.parse(payload);
     return jobs.map((j) => ({

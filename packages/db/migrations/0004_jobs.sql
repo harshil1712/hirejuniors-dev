@@ -20,6 +20,10 @@ CREATE TABLE source (
   config text NOT NULL DEFAULT '{}',
   include_all integer NOT NULL DEFAULT 0,
   enabled integer NOT NULL DEFAULT 1,
+  origin text NOT NULL DEFAULT 'manual',
+  trial integer NOT NULL DEFAULT 0,
+  disabled_reason text,
+  last_fetched integer,
   last_run_at integer,
   last_status text,
   last_error text,
@@ -36,7 +40,7 @@ CREATE TABLE job (
   external_id text NOT NULL,
   slug text NOT NULL,
   title text NOT NULL,
-  level text NOT NULL,
+  level text,
   employment_type text,
   workplace text,
   location_raw text NOT NULL,
@@ -49,9 +53,22 @@ CREATE TABLE job (
   posted_at integer,
   source_updated_at integer,
   valid_through integer,
-  status text NOT NULL DEFAULT 'active',
+  status text NOT NULL DEFAULT 'pending',
   retired_at integer,
   retire_reason text,
+  content_hash text NOT NULL,
+  classified_at integer,
+  classified_by text,
+  classifier_confidence real,
+  reject_reason text,
+  review_reason text,
+  min_years_experience integer,
+  salary_min integer,
+  salary_max integer,
+  salary_currency text,
+  salary_period text,
+  graduation_year integer,
+  extracted_at integer,
   missed_runs integer NOT NULL DEFAULT 0,
   first_seen_at integer NOT NULL,
   last_seen_at integer NOT NULL,
@@ -72,6 +89,8 @@ CREATE INDEX job_status_level_idx ON job (status, level);
 --> statement-breakpoint
 CREATE INDEX job_company_status_idx ON job (company_id, status);
 --> statement-breakpoint
+CREATE INDEX job_status_classified_idx ON job (status, classified_at);
+--> statement-breakpoint
 CREATE TABLE ingest_run (
   id text PRIMARY KEY,
   trigger text NOT NULL,
@@ -84,6 +103,12 @@ CREATE TABLE ingest_run (
   updated integer NOT NULL DEFAULT 0,
   reactivated integer NOT NULL DEFAULT 0,
   retired integer NOT NULL DEFAULT 0,
+  classified integer NOT NULL DEFAULT 0,
+  rejected integer NOT NULL DEFAULT 0,
+  review integer NOT NULL DEFAULT 0,
+  discovered integer NOT NULL DEFAULT 0,
+  ai_input_tokens integer NOT NULL DEFAULT 0,
+  ai_output_tokens integer NOT NULL DEFAULT 0,
   error text
 );
 --> statement-breakpoint
@@ -101,4 +126,28 @@ CREATE TABLE source_run (
   error text,
   started_at integer NOT NULL,
   finished_at integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE discovery_candidate (
+  id text PRIMARY KEY,
+  origin text NOT NULL,
+  input text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  platform text,
+  board text,
+  source_id text REFERENCES source(id) ON DELETE SET NULL,
+  error text,
+  attempts integer NOT NULL DEFAULT 0,
+  created_at integer NOT NULL,
+  updated_at integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX discovery_candidate_input_idx ON discovery_candidate (input);
+--> statement-breakpoint
+CREATE TABLE discovery_cursor (
+  id text PRIMARY KEY,
+  next_page integer NOT NULL DEFAULT 0,
+  num_pages integer,
+  done integer NOT NULL DEFAULT 0,
+  updated_at integer NOT NULL
 );

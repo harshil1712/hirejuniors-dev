@@ -132,6 +132,7 @@ export async function seedJob(
       externalId: input.externalId ?? id,
       slug: input.slug ?? id,
       title: input.title ?? "Software Engineer Intern",
+      contentHash: input.contentHash ?? `hash_${id}`,
       level: input.level ?? "internship",
       employmentType: input.employmentType ?? null,
       workplace: input.workplace ?? null,

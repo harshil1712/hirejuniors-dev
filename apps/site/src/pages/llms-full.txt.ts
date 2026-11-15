@@ -19,7 +19,7 @@ export async function GET(context: APIContext) {
         slug: j.slug,
         title: j.title,
         companyName: j.companyName,
-        levelLabel: levelLabelLower(j.level),
+        levelLabel: j.level ? levelLabelLower(j.level) : "",
         location: j.locationRaw,
         posted: isoDate(j.postedAt ?? j.firstSeenAt),
       }),

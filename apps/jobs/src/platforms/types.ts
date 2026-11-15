@@ -29,4 +29,12 @@ export interface PlatformAdapter<C = unknown, Payload = unknown> {
   fetchListings(fetcher: Fetcher, source: SourceRow): Promise<RawListing[]>;
   /** Pure transform of a raw API payload — the unit-testable half. */
   toListings(payload: Payload, source: SourceRow): RawListing[];
+  /** Discovery probe: one GET of the listings endpoint; ok = HTTP 200 and the
+   * payload zod-parses. networkError distinguishes a thrown fetch/timeout
+   * from a real HTTP answer — a 404 is a real answer (not_found). Not
+   * implemented for amazon_jobs. */
+  probe?(
+    fetcher: Fetcher,
+    board: string,
+  ): Promise<{ ok: true; companyName?: string } | { ok: false; networkError?: boolean }>;
 }

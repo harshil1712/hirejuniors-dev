@@ -2,7 +2,7 @@
 // mirrors this file (hand-maintained, see migrations/README.md).
 import { nanoid } from "nanoid";
 import { desc, relations } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const id = (prefix: string) =>
   text("id")
@@ -46,6 +46,12 @@ export const source = sqliteTable(
     /** Skip the junior-level filter — board is already early-career only. */
     includeAll: integer("include_all", { mode: "boolean" }).notNull().default(false),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    origin: text("origin", { enum: ["seed", "manual", "discovered"] })
+      .notNull()
+      .default("manual"),
+    trial: integer("trial", { mode: "boolean" }).notNull().default(false),
+    disabledReason: text("disabled_reason", { enum: ["no_junior_roles", "manual"] }),
+    lastFetched: integer("last_fetched"),
     lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
     lastStatus: text("last_status", { enum: ["succeeded", "failed"] }),
     lastError: text("last_error"),
@@ -70,7 +76,7 @@ export const job = sqliteTable(
     title: text("title").notNull(),
     level: text("level", {
       enum: ["internship", "apprenticeship", "graduate", "junior"],
-    }).notNull(),
+    }),
     /** schema.org employmentType. */
     employmentType: text("employment_type", {
       enum: ["FULL_TIME", "PART_TIME", "INTERN", "CONTRACTOR", "TEMPORARY", "OTHER"],
@@ -89,13 +95,30 @@ export const job = sqliteTable(
     postedAt: integer("posted_at", { mode: "timestamp_ms" }),
     sourceUpdatedAt: integer("source_updated_at", { mode: "timestamp_ms" }),
     validThrough: integer("valid_through", { mode: "timestamp_ms" }),
-    status: text("status", { enum: ["active", "retired"] })
+    status: text("status", {
+      enum: ["pending", "active", "review", "rejected", "retired"],
+    })
       .notNull()
-      .default("active"),
+      .default("pending"),
     retiredAt: integer("retired_at", { mode: "timestamp_ms" }),
     retireReason: text("retire_reason", {
-      enum: ["missing_from_feed", "link_dead", "expired", "manual"],
+      enum: ["missing_from_feed", "link_dead", "closed_page", "expired", "manual"],
     }),
+    contentHash: text("content_hash").notNull(),
+    classifiedAt: integer("classified_at", { mode: "timestamp_ms" }),
+    classifiedBy: text("classified_by", { enum: ["rules", "clef-flash", "clef", "admin"] }),
+    classifierConfidence: real("classifier_confidence"),
+    rejectReason: text("reject_reason", {
+      enum: ["not_early_career", "not_tech", "experience", "admin"],
+    }),
+    reviewReason: text("review_reason"),
+    minYearsExperience: integer("min_years_experience"),
+    salaryMin: integer("salary_min"),
+    salaryMax: integer("salary_max"),
+    salaryCurrency: text("salary_currency"),
+    salaryPeriod: text("salary_period", { enum: ["HOUR", "WEEK", "MONTH", "YEAR"] }),
+    graduationYear: integer("graduation_year"),
+    extractedAt: integer("extracted_at", { mode: "timestamp_ms" }),
     missedRuns: integer("missed_runs").notNull().default(0),
     firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
@@ -109,6 +132,7 @@ export const job = sqliteTable(
     index("job_status_country_idx").on(table.status, table.countryCode),
     index("job_status_level_idx").on(table.status, table.level),
     index("job_company_status_idx").on(table.companyId, table.status),
+    index("job_status_classified_idx").on(table.status, table.classifiedAt),
   ],
 );
 
@@ -126,7 +150,44 @@ export const ingestRun = sqliteTable("ingest_run", {
   updated: integer("updated").notNull().default(0),
   reactivated: integer("reactivated").notNull().default(0),
   retired: integer("retired").notNull().default(0),
+  classified: integer("classified").notNull().default(0),
+  rejected: integer("rejected").notNull().default(0),
+  review: integer("review").notNull().default(0),
+  discovered: integer("discovered").notNull().default(0),
+  aiInputTokens: integer("ai_input_tokens").notNull().default(0),
+  aiOutputTokens: integer("ai_output_tokens").notNull().default(0),
   error: text("error"),
+});
+
+export const discoveryCandidate = sqliteTable(
+  "discovery_candidate",
+  {
+    id: id("dsc_"),
+    origin: text("origin", { enum: ["manual", "crawl"] }).notNull(),
+    input: text("input").notNull(),
+    status: text("status", {
+      enum: ["queued", "found", "not_found", "duplicate", "failed"],
+    })
+      .notNull()
+      .default("queued"),
+    platform: text("platform", { enum: ["greenhouse", "lever", "ashby", "amazon_jobs"] }),
+    board: text("board"),
+    sourceId: text("source_id").references(() => source.id, { onDelete: "set null" }),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("discovery_candidate_input_idx").on(table.input)],
+);
+
+export const discoveryCursor = sqliteTable("discovery_cursor", {
+  id: text("id").primaryKey(),
+  nextPage: integer("next_page").notNull().default(0),
+  numPages: integer("num_pages"),
+  done: integer("done", { mode: "boolean" }).notNull().default(false),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 
 export const sourceRun = sqliteTable("source_run", {

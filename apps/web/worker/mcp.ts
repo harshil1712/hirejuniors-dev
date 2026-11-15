@@ -6,12 +6,14 @@ import { env } from "cloudflare:workers";
 import { user } from "../schema/db";
 import { PRODUCT } from "../src/config";
 import { hasScope, type Principal, type Scope } from "./middleware/principal";
+import * as discoverySvc from "./services/discovery";
 import * as jobsSvc from "./services/jobs";
 import * as companiesSvc from "./services/companies";
 import * as sourcesSvc from "./services/sources";
 import * as runsSvc from "./services/runs";
 import { ServiceError } from "./services/errors";
 import {
+  DiscoveryCandidate,
   Company,
   CompanyCreate,
   IngestRun,
@@ -180,6 +182,89 @@ export function createServer(principal: Principal, db: Db) {
       return {
         content: text(`${job.title} → ${job.status}`),
         structuredContent: { job },
+      };
+    }),
+  );
+
+  server.registerTool(
+    "jobs_approve",
+    {
+      title: "Approve a job",
+      description:
+        "Marks a review/rejected job active with the given level. classified_by='admin' — sticky across content changes.",
+      inputSchema: z.object({
+        id: ID("job_"),
+        level: z.enum(["internship", "apprenticeship", "graduate", "junior"]),
+      }),
+      outputSchema: z.object({ job: Job }),
+      annotations: { ...writing, idempotentHint: true },
+    },
+    guarded(principal, "jobs_approve", "write", async ({ id, level }) => {
+      const job = await jobsSvc.approve(db, id as string, level as Job["level"]);
+      return {
+        content: text(`${job.title} → active (${job.level})`),
+        structuredContent: { job },
+      };
+    }),
+  );
+
+  server.registerTool(
+    "jobs_reject",
+    {
+      title: "Reject a job",
+      description: "Marks a job rejected with reason 'admin' (sticky).",
+      inputSchema: z.object({ id: ID("job_") }),
+      outputSchema: z.object({ job: Job }),
+      annotations: { ...writing, idempotentHint: true },
+    },
+    guarded(principal, "jobs_reject", "write", async ({ id }) => {
+      const job = await jobsSvc.reject(db, id as string);
+      return {
+        content: text(`${job.title} → rejected`),
+        structuredContent: { job },
+      };
+    }),
+  );
+
+  server.registerTool(
+    "discovery_add",
+    {
+      title: "Add discovery candidates",
+      description:
+        "Queues company domains for ATS-board discovery (max 500 per call). Returns how many unique valid domains were queued.",
+      inputSchema: z.object({ domains: z.array(z.string()).min(1).max(500) }),
+      outputSchema: z.object({ added: z.number() }),
+      annotations: { ...writing, idempotentHint: true },
+    },
+    guarded(principal, "discovery_add", "write", async ({ domains }) => {
+      const added = await discoverySvc.addDomains(db, domains as string[]);
+      return {
+        content: text(`${added} domain(s) queued`),
+        structuredContent: { added },
+      };
+    }),
+  );
+
+  server.registerTool(
+    "discovery_list",
+    {
+      title: "List discovery candidates",
+      description: "Lists discovery candidates, newest first; optional status filter.",
+      inputSchema: z.object({
+        status: z.enum(["queued", "found", "not_found", "duplicate", "failed"]).optional(),
+        cursor: z.string().optional(),
+      }),
+      outputSchema: z.object({
+        data: z.array(DiscoveryCandidate),
+        nextCursor: z.string().nullable(),
+      }),
+      annotations: readOnly,
+    },
+    guarded(principal, "discovery_list", "read", async (args) => {
+      const out = await discoverySvc.list(db, args as { status?: string; cursor?: string });
+      return {
+        content: text(`${out.data.length} candidate(s)`),
+        structuredContent: out,
       };
     }),
   );

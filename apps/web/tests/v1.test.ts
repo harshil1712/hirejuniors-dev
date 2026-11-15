@@ -197,11 +197,14 @@ describe("/api/v1", () => {
         "/api/v1/sources/{id}",
         "/api/v1/runs",
         "/api/v1/runs/{id}",
+        "/api/v1/jobs/{id}/approve",
+        "/api/v1/jobs/{id}/reject",
+        "/api/v1/discovery",
       ]),
     );
     const ops = paths.flatMap((p) => Object.keys(doc.paths[p]));
     expect(new Set(ops)).toEqual(new Set(["get", "post", "patch"]));
-    expect(ops).toHaveLength(14);
+    expect(ops).toHaveLength(18);
 
     // Every operation is secured with bearerAuth; the scheme is http/bearer.
     for (const p of paths)

@@ -183,6 +183,7 @@ export const Jobs = PREVIEW_NAME
           },
           env: {
             DB,
+            AI: Cloudflare.Workers.AI(),
             // Pinned stage-scoped physical name — the web worker's
             // cross-script binding repeats it verbatim.
             INGEST_WORKFLOW: Cloudflare.Workflow("IngestWorkflow", {

@@ -1,108 +1,179 @@
-import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, beforeAll } from "vite-plus/test";
+import { eq, inArray } from "drizzle-orm";
 import { job } from "@hirejuniors/db/schema";
-import { jobsForLinkCheck } from "@hirejuniors/db/queries";
 import { expireJobs, linkCheckSlice } from "../src/retire";
-import { db, listing, migrate, seedCompany, seedSource } from "./helpers";
-import { upsertListings } from "../src/ingest";
+import type { AiModels } from "../src/ai";
+import { db, migrate, seedCompany, seedSource } from "./helpers";
 
-beforeAll(async () => {
-  await migrate();
-  await seedCompany();
-});
+beforeAll(migrate);
 
-const DAY = 24 * 60 * 60 * 1000;
+async function insertJob(over: Partial<typeof job.$inferInsert> = {}) {
+  const now = new Date();
+  const id = `job_${Math.random().toString(36).slice(2, 14)}`;
+  await db()
+    .insert(job)
+    .values({
+      id,
+      slug: id,
+      externalId: `ext-${id}`,
+      sourceId: "src_retire01",
+      companyId: "cmp_retire01",
+      title: "Junior Engineer",
+      locationRaw: "Austin, TX",
+      descriptionText: "text",
+      applyUrl: `https://example.com/${id}`,
+      contentHash: `h-${id}`,
+      status: "active",
+      firstSeenAt: now,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+      ...over,
+    });
+  return id;
+}
+async function getJob(id: string) {
+  return (await db().select().from(job).where(eq(job.id, id)))[0];
+}
+
+const BIG_PAGE = `<html><body>${"open role content ".repeat(40)}</body></html>`;
+
+function fetcher(routes: Record<string, Response>): typeof fetch {
+  return (async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+    for (const [key, res] of Object.entries(routes)) {
+      if (url.includes(key)) return res.clone();
+    }
+    return new Response(BIG_PAGE, { status: 200, headers: { "content-type": "text/html" } });
+  }) as typeof fetch;
+}
+function ai(noulP: number): AiModels {
+  return {
+    async decide() {
+      return {
+        answers: { open: { type: "noul", noul: noulP } },
+        inputTokens: 5,
+      };
+    },
+    async extract() {
+      return { answers: {}, inputTokens: 0 };
+    },
+  };
+}
+const noAi: AiModels = {
+  decide: () => Promise.reject(new Error("ai must not be called")),
+  extract: () => Promise.reject(new Error("ai must not be called")),
+};
 
 describe("expireJobs", () => {
-  it("retires 91-day-old posted_at and past valid_through", async () => {
-    const src = await seedSource({ id: "src_expire00001" });
-    const now = new Date();
-    const old = new Date(now.getTime() - 91 * DAY);
-    await upsertListings(db(), src, "testco", [
-      listing({ externalId: "old", postedAt: old }),
-      listing({ externalId: "fresh", postedAt: new Date(now.getTime() - 30 * DAY) }),
-      listing({ externalId: "through" }),
-    ]);
-    await db()
-      .update(job)
-      .set({ validThrough: new Date(now.getTime() - DAY) })
-      .where(eq(job.externalId, "through"));
-
-    const n = await expireJobs(db(), now);
-    expect(n).toBe(2);
-    const rows = await db().select().from(job).where(eq(job.sourceId, src.id));
-    const byExt = Object.fromEntries(rows.map((r) => [r.externalId, r]));
-    expect(byExt.old.status).toBe("retired");
-    expect(byExt.old.retireReason).toBe("expired");
-    expect(byExt.through.retireReason).toBe("expired");
-    expect(byExt.fresh.status).toBe("active");
+  it("retires active jobs past validThrough", async () => {
+    await seedCompany({ id: "cmp_retire01", slug: "retco", name: "Ret Co" });
+    await seedSource({ id: "src_retire01", companyId: "cmp_retire01", board: "retco" });
+    const expired = await insertJob({ validThrough: new Date(Date.now() - 86400000) });
+    const fresh = await insertJob({ validThrough: new Date(Date.now() + 86400000) });
+    const n = await expireJobs(db());
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect((await getJob(expired)).status).toBe("retired");
+    expect((await getJob(expired)).retireReason).toBe("expired");
+    expect((await getJob(fresh)).status).toBe("active");
   });
 });
 
 describe("linkCheckSlice", () => {
-  it("404/410 retires link_dead; 200/301 stamp last_checked_at; thrown fetch untouched", async () => {
-    const src = await seedSource({ id: "src_linkck00001" });
-    await upsertListings(db(), src, "testco", [
-      listing({ externalId: "dead", applyUrl: "https://x/dead" }),
-      listing({ externalId: "gone", applyUrl: "https://x/gone" }),
-      listing({ externalId: "ok", applyUrl: "https://x/ok" }),
-      listing({ externalId: "moved", applyUrl: "https://x/moved" }),
-      listing({ externalId: "net", applyUrl: "https://x/net" }),
-    ]);
-    const statuses = new Map([
-      ["dead", 404],
-      ["gone", 410],
-      ["ok", 200],
-      ["moved", 301],
-    ]);
-    const fetcher = (async (input: RequestInfo | URL) => {
-      const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-      if (url.endsWith("/net")) throw new Error("network down");
-      const status = statuses.get(url.split("/").pop()!) ?? 200;
-      return new Response("", { status });
-    }) as typeof fetch;
-
-    const ids = (await jobsForLinkCheck(db(), 400)).map((j) => j.id);
-    await linkCheckSlice(db(), fetcher, ids);
-
-    const rows = await db().select().from(job).where(eq(job.sourceId, src.id));
-    const byExt = Object.fromEntries(rows.map((r) => [r.externalId, r]));
-    expect(byExt.dead.status).toBe("retired");
-    expect(byExt.dead.retireReason).toBe("link_dead");
-    expect(byExt.gone.retireReason).toBe("link_dead");
-    expect(byExt.ok.status).toBe("active");
-    expect(byExt.ok.lastCheckedAt).toBeInstanceOf(Date);
-    expect(byExt.moved.status).toBe("active");
-    expect(byExt.moved.lastCheckedAt).toBeInstanceOf(Date);
-    expect(byExt.net.status).toBe("active");
-    expect(byExt.net.lastCheckedAt).toBeNull();
+  it("404 after redirect → link_dead", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/gone" });
+    const res = await linkCheckSlice(
+      db(),
+      fetcher({ gone: new Response(null, { status: 404 }) }),
+      noAi,
+      [id],
+    );
+    expect(res.linkDead).toBe(1);
+    const j = await getJob(id);
+    expect(j.status).toBe("retired");
+    expect(j.retireReason).toBe("link_dead");
   });
 
-  it("pagination: slices cover distinct jobs — slice 2 doesn't skip unchecked rows", async () => {
-    const src = await seedSource({ id: "src_linkpage001" });
-    // Other sources' active jobs are excluded by filtering on this source's ids.
-    await upsertListings(
+  it("text under 200 chars → stamped, no AI call", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/short" });
+    const res = await linkCheckSlice(
       db(),
-      src,
-      "testco",
-      Array.from({ length: 90 }, (_, i) =>
-        listing({ externalId: `p-${i}`, applyUrl: `https://x/p-${i}` }),
-      ),
+      fetcher({
+        short: new Response("<html><body>ok</body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      }),
+      noAi,
+      [id],
     );
-    const ok = (async () => new Response("", { status: 200 })) as typeof fetch;
+    expect(res.checked).toBe(1);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).not.toBeNull();
+  });
 
-    const allIds = (await jobsForLinkCheck(db(), 400)).map((j) => j.id);
-    const rows = await db().select({ id: job.id }).from(job).where(eq(job.sourceId, src.id));
-    const ourIds = allIds.filter((id) => rows.some((r) => r.id === id));
-    expect(ourIds).toHaveLength(90);
+  it("noul ≤ 0.15 → closed_page", async () => {
+    // 1 of 4 = 25%, not >25% — breaker stays off.
+    const closed = await insertJob({ applyUrl: "https://x.test/closedpage" });
+    const others = await Promise.all(
+      [1, 2, 3].map((i) => insertJob({ applyUrl: `https://x.test/shorty${i}` })),
+    );
+    const res = await linkCheckSlice(
+      db(),
+      fetcher({
+        shorty: new Response("<html><body>ok</body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      }),
+      ai(0.1),
+      [closed, ...others],
+    );
+    expect(res.closedPage).toBe(1);
+    expect(res.breakerTripped).toBe(false);
+    const j = await getJob(closed);
+    expect(j.status).toBe("retired");
+    expect(j.retireReason).toBe("closed_page");
+    for (const id of others) expect((await getJob(id)).status).toBe("active");
+  });
 
-    await linkCheckSlice(db(), ok, ourIds.slice(0, 40));
-    await linkCheckSlice(db(), ok, ourIds.slice(40, 80));
+  it("noul = 0.5 → stamped only", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/open" });
+    await linkCheckSlice(db(), fetcher({}), ai(0.5), [id]);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).not.toBeNull();
+  });
 
-    const after = await db().select().from(job).where(eq(job.sourceId, src.id));
-    const checked = after.filter((j) => j.lastCheckedAt !== null).map((j) => j.id);
-    expect(new Set(checked)).toEqual(new Set(ourIds.slice(0, 80)));
-    const unchecked = after.filter((j) => j.lastCheckedAt === null).map((j) => j.id);
-    expect(new Set(unchecked)).toEqual(new Set(ourIds.slice(80)));
+  it("breaker: >25% closed_page → none retire closed_page; link_dead still applies", async () => {
+    const ids = await Promise.all(
+      [1, 2, 3, 4].map((i) => insertJob({ applyUrl: `https://x.test/cb${i}` })),
+    );
+    const dead = await insertJob({ applyUrl: "https://x.test/dead" });
+    // 5 closed_page-worthy jobs: add one more
+    const ids5 = [...ids, await insertJob({ applyUrl: "https://x.test/cb5" })];
+    const res = await linkCheckSlice(
+      db(),
+      fetcher({ dead: new Response(null, { status: 404 }) }),
+      ai(0.05),
+      [...ids5, dead],
+    );
+    expect(res.breakerTripped).toBe(true);
+    for (const id of ids5) {
+      const j = await getJob(id);
+      expect(j.status).toBe("active");
+      expect(j.lastCheckedAt).not.toBeNull();
+    }
+    expect((await getJob(dead)).retireReason).toBe("link_dead");
+  });
+
+  it("model error → untouched", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/err" });
+    const res = await linkCheckSlice(db(), fetcher({}), noAi, [id]);
+    expect(res.checked).toBe(1);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).toBeNull();
   });
 });

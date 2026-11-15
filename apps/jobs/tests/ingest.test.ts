@@ -1,158 +1,266 @@
+import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vite-plus/test";
-import { job, source, sourceRun } from "@hirejuniors/db/schema";
-import { ingestSource, recordSourceFailure, startRun, upsertListings } from "../src/ingest";
+import { job } from "@hirejuniors/db/schema";
+import { ingestSource, upsertListings } from "../src/ingest";
+import { trialEval } from "../src/discover";
 import { db, listing, migrate, seedCompany, seedSource } from "./helpers";
 
-beforeAll(async () => {
-  await migrate();
-  await seedCompany();
-});
+beforeAll(migrate);
 
-const jobsOf = (sourceId: string) => db().select().from(job).where(eq(job.sourceId, sourceId));
+async function jobsFor(sourceId: string) {
+  return db().select().from(job).where(eq(job.sourceId, sourceId));
+}
+function fakeFetcher(listings: object[]): typeof fetch {
+  return (async () =>
+    new Response(JSON.stringify(listings ?? []), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+}
 
 describe("upsertListings", () => {
-  it("inserts with slug + first_seen_at", async () => {
-    const src = await seedSource({ id: "src_insert00001" });
-    const counts = await upsertListings(db(), src, "testco", [listing()]);
-    expect(counts).toMatchObject({ fetched: 1, kept: 1, inserted: 1 });
-    const [j] = await jobsOf(src.id);
-    expect(j.slug).toMatch(/^graduate-engineer-\d+-testco-[a-z0-9]{6}$/);
-    expect(j.firstSeenAt).toBeInstanceOf(Date);
-    expect(j.status).toBe("active");
-    expect(j.level).toBe("graduate");
+  it("inserts new listings as pending", async () => {
+    await seedCompany({ id: "cmp_ing01", slug: "ingco", name: "Ing Co" });
+    const src = await seedSource({ id: "src_ing01", companyId: "cmp_ing01", board: "ingco" });
+    const counts = await upsertListings(db(), src, "ingco", [listing()]);
+    expect(counts.inserted).toBe(1);
+    const [j] = await jobsFor("src_ing01");
+    expect(j.status).toBe("pending");
+    expect(j.contentHash).toBeTruthy();
   });
 
-  it("re-ingest with a changed title keeps the slug", async () => {
-    const src = await seedSource({ id: "src_reslug00001" });
-    await upsertListings(db(), src, "testco", [listing({ externalId: "e1" })]);
-    const [before] = await jobsOf(src.id);
-    await upsertListings(db(), src, "testco", [
-      listing({ externalId: "e1", title: "Renamed Graduate Engineer" }),
+  it("drops excluded titles; intern exception survives", async () => {
+    const src = await seedSource({ id: "src_ing02", companyId: "cmp_ing01", board: "ingco2" });
+    const counts = await upsertListings(db(), src, "ingco", [
+      listing({ externalId: "a", title: "Senior Staff Engineer" }),
+      listing({ externalId: "b", title: "Sales Lead Intern" }),
     ]);
-    const [after] = await jobsOf(src.id);
-    expect(after.slug).toBe(before.slug);
-    expect(after.title).toBe("Renamed Graduate Engineer");
+    expect(counts.inserted).toBe(1);
+    const rows = await jobsFor("src_ing02");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("Sales Lead Intern");
   });
 
-  it("feed diff: missing once → missed_runs 1; twice → retired", async () => {
-    const src = await seedSource({ id: "src_diff0000001" });
-    await upsertListings(db(), src, "testco", [listing({ externalId: "gone" })]);
-    await upsertListings(db(), src, "testco", []);
-    let [j] = await jobsOf(src.id);
-    expect(j.missedRuns).toBe(1);
+  it("same hash → classification columns untouched", async () => {
+    const src = await seedSource({ id: "src_ing03", companyId: "cmp_ing01", board: "ingco3" });
+    const l = listing({ externalId: "same" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({ status: "active", level: "junior", classifiedBy: "clef", classifiedAt: new Date() })
+      .where(eq(job.sourceId, "src_ing03"));
+    await upsertListings(db(), src, "ingco", [l]);
+    const [j] = await jobsFor("src_ing03");
     expect(j.status).toBe("active");
-    await upsertListings(db(), src, "testco", []);
-    [j] = await jobsOf(src.id);
-    expect(j.missedRuns).toBe(2);
-    expect(j.status).toBe("retired");
-    expect(j.retireReason).toBe("missing_from_feed");
+    expect(j.classifiedBy).toBe("clef");
   });
 
-  it("reappearing job is reactivated with missed_runs 0", async () => {
-    const src = await seedSource({ id: "src_react0000001" });
-    await upsertListings(db(), src, "testco", [listing({ externalId: "boomerang" })]);
-    await upsertListings(db(), src, "testco", []);
-    await upsertListings(db(), src, "testco", [listing({ externalId: "boomerang" })]);
-    const [j] = await jobsOf(src.id);
+  it("changed hash: pending/review/rejected → pending", async () => {
+    const src = await seedSource({ id: "src_ing04", companyId: "cmp_ing01", board: "ingco4" });
+    const l = listing({ externalId: "chg" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({ status: "rejected", rejectReason: "not_tech", classifiedBy: "clef" })
+      .where(eq(job.sourceId, "src_ing04"));
+    await upsertListings(db(), src, "ingco", [
+      { ...l, descriptionHtml: "<p>totally different description</p>" },
+    ]);
+    const [j] = await jobsFor("src_ing04");
+    expect(j.status).toBe("pending");
+    expect(j.classifiedAt).toBeNull();
+  });
+
+  it("changed hash on active stays active with classified_at null", async () => {
+    const src = await seedSource({ id: "src_ing05", companyId: "cmp_ing01", board: "ingco5" });
+    const l = listing({ externalId: "act" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({ status: "active", level: "junior", classifiedBy: "clef", classifiedAt: new Date() })
+      .where(eq(job.sourceId, "src_ing05"));
+    await upsertListings(db(), src, "ingco", [{ ...l, descriptionHtml: "<p>changed</p>" }]);
+    const [j] = await jobsFor("src_ing05");
     expect(j.status).toBe("active");
-    expect(j.missedRuns).toBe(0);
-    expect(j.retireReason).toBeNull();
+    expect(j.classifiedAt).toBeNull();
   });
 
-  it("manual retiree is not reactivated", async () => {
-    const src = await seedSource({ id: "src_manual000001" });
-    await upsertListings(db(), src, "testco", [listing({ externalId: "m1" })]);
+  it("admin-decided rows are sticky", async () => {
+    const src = await seedSource({ id: "src_ing06", companyId: "cmp_ing01", board: "ingco6" });
+    const l = listing({ externalId: "adm" });
+    await upsertListings(db(), src, "ingco", [l]);
+    await db()
+      .update(job)
+      .set({ status: "active", classifiedBy: "admin", classifiedAt: new Date(), level: "junior" })
+      .where(eq(job.sourceId, "src_ing06"));
+    await upsertListings(db(), src, "ingco", [{ ...l, descriptionHtml: "<p>changed</p>" }]);
+    const [j] = await jobsFor("src_ing06");
+    expect(j.status).toBe("active");
+    expect(j.classifiedAt).not.toBeNull();
+    expect(j.classifiedBy).toBe("admin");
+  });
+
+  it("manual retirement is sticky — reappearing listing stays retired", async () => {
+    const src = await seedSource({ id: "src_ing07", companyId: "cmp_ing01", board: "ingco7" });
+    const l = listing({ externalId: "man" });
+    await upsertListings(db(), src, "ingco", [l]);
     await db()
       .update(job)
       .set({ status: "retired", retireReason: "manual", retiredAt: new Date() })
-      .where(eq(job.sourceId, src.id));
-    const counts = await upsertListings(db(), src, "testco", [listing({ externalId: "m1" })]);
-    expect(counts.reactivated).toBe(0);
-    const [j] = await jobsOf(src.id);
+      .where(eq(job.sourceId, "src_ing07"));
+    await upsertListings(db(), src, "ingco", [l]);
+    const [j] = await jobsFor("src_ing07");
     expect(j.status).toBe("retired");
     expect(j.retireReason).toBe("manual");
   });
+});
 
-  it("non-junior titles are dropped unless include_all; exclusions always drop", async () => {
-    const strict = await seedSource({ id: "src_strict00001" });
-    await upsertListings(db(), strict, "testco", [
-      listing({ externalId: "s1", title: "Software Engineer" }),
+describe("feed diff", () => {
+  it("missing active/review retires after 1 miss; pending/rejected too", async () => {
+    const src = await seedSource({ id: "src_diff01", companyId: "cmp_ing01", board: "diff1" });
+    await upsertListings(db(), src, "ingco", [
+      listing({ externalId: "keep" }),
+      listing({ externalId: "gone-active" }),
+      listing({ externalId: "gone-pending" }),
     ]);
-    expect(await jobsOf(strict.id)).toHaveLength(0);
-
-    const all = await seedSource({ id: "src_inclall00001", includeAll: true });
-    const counts = await upsertListings(db(), all, "testco", [
-      listing({ externalId: "a1", title: "Software Engineer" }),
-      listing({ externalId: "a2", title: "Senior Software Engineer" }),
-    ]);
-    expect(counts.kept).toBe(1);
-    const [j] = await jobsOf(all.id);
-    expect(j.title).toBe("Software Engineer");
-    expect(j.level).toBe("graduate");
-  });
-
-  it("duplicate externalId in one feed: first wins, one row", async () => {
-    const src = await seedSource({ id: "src_dedupe00001" });
-    const counts = await upsertListings(db(), src, "testco", [
-      listing({ externalId: "dup", title: "Intern A" }),
-      listing({ externalId: "dup", title: "Intern B" }),
-    ]);
-    expect(counts.kept).toBe(1);
-    expect(counts.inserted).toBe(1);
-    const rows = await jobsOf(src.id);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].title).toBe("Intern A");
-  });
-
-  it("employmentType INTERN keeps an unmatched title as internship", async () => {
-    const src = await seedSource({ id: "src_intern00001" });
-    await upsertListings(db(), src, "testco", [
-      listing({ externalId: "i1", title: "Software Engineer", employmentTypeHint: "INTERN" }),
-    ]);
-    const [j] = await jobsOf(src.id);
-    expect(j.level).toBe("internship");
-  });
-
-  it("batches 120 listings for one source under the param limit", async () => {
-    const src = await seedSource({ id: "src_batch000001" });
-    const listings = Array.from({ length: 120 }, (_, i) =>
-      listing({ externalId: `bulk-${i}`, title: `Intern ${i}` }),
-    );
-    const counts = await upsertListings(db(), src, "testco", listings);
-    expect(counts.inserted).toBe(120);
-    expect(await jobsOf(src.id)).toHaveLength(120);
+    await db().update(job).set({ status: "active" }).where(eq(job.externalId, "gone-active"));
+    const counts = await upsertListings(db(), src, "ingco", [listing({ externalId: "keep" })]);
+    expect(counts.retired).toBe(2);
+    const rows = await jobsFor("src_diff01");
+    const gone = rows.filter((r) => r.externalId !== "keep");
+    expect(
+      gone.every((r) => r.status === "retired" && r.retireReason === "missing_from_feed"),
+    ).toBe(true);
   });
 });
 
-describe("ingestSource failure handling", () => {
-  it("failed fetch leaves jobs untouched, records source_run + last_error", async () => {
-    await seedCompany({ id: "cmp_fail0000001", slug: "failco" });
+describe("shrink guard (ingestSource)", () => {
+  it("<20% of last_fetched≥10 → failure, no diff", async () => {
     const src = await seedSource({
-      id: "src_fail0000001",
-      companyId: "cmp_fail0000001",
-      platform: "lever",
-      board: "failco",
+      id: "src_shrink01",
+      companyId: "cmp_ing01",
+      board: "shrink1",
+      lastFetched: 20,
     });
-    await upsertListings(db(), src, "failco", [listing({ externalId: "keep" })]);
-    const [before] = await jobsOf(src.id);
+    // lever adapter fetchListings hits jobs.lever.co/{board}?mode=json
+    const fetcher = fakeFetcher([
+      { id: "l1", text: "Graduate Eng", hostedUrl: "https://x", categories: {} },
+    ]);
+    await expect(ingestSource(db(), "run_x", src.id, fetcher)).rejects.toThrow(/shrank/);
+  });
 
-    const runId = await startRun(db(), "schedule", "wf-test-1");
-    const failing = (async () => new Response("boom", { status: 500 })) as typeof fetch;
-    await expect(ingestSource(db(), runId, src.id, failing)).rejects.toThrow();
-    await recordSourceFailure(db(), runId, src.id, new Error("lever 500"));
+  it("0 fetched with active jobs → failure", async () => {
+    const src = await seedSource({ id: "src_shrink02", companyId: "cmp_ing01", board: "shrink2" });
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "s2" })]);
+    await db().update(job).set({ status: "active" }).where(eq(job.sourceId, "src_shrink02"));
+    const fetcher = fakeFetcher([]);
+    await expect(ingestSource(db(), "run_x", src.id, fetcher)).rejects.toThrow(/shrank/);
+  });
+});
 
-    const [after] = await jobsOf(src.id);
-    expect(after.status).toBe("active");
-    expect(after.missedRuns).toBe(before.missedRuns);
+describe("trialEval", () => {
+  async function trialSource(id: string) {
+    return seedSource({ id, companyId: "cmp_ing01", board: id, trial: true });
+  }
 
-    const runs = await db().select().from(sourceRun).where(eq(sourceRun.sourceId, src.id));
-    expect(runs).toHaveLength(1);
-    expect(runs[0].status).toBe("failed");
-    expect(runs[0].error).toBe("lever 500");
+  it("active/review job → kept (trial false)", async () => {
+    const src = await trialSource("src_tr1");
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "t1" })]);
+    await db().update(job).set({ status: "review" }).where(eq(job.sourceId, "src_tr1"));
+    await trialEval(db(), ["src_tr1"]);
+    const { source: srcTable } = await import("@hirejuniors/db/schema");
+    const [s] = await db().select().from(srcTable).where(eq(srcTable.id, "src_tr1"));
+    expect(s.trial).toBe(false);
+    expect(s.enabled).toBe(true);
+  });
 
-    const [s] = await db().select().from(source).where(eq(source.id, src.id));
-    expect(s.lastStatus).toBe("failed");
-    expect(s.lastError).toBe("lever 500");
+  it("no junior rows → disabled no_junior_roles", async () => {
+    const src = await trialSource("src_tr2");
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "t2" })]);
+    await db()
+      .update(job)
+      .set({ status: "rejected", rejectReason: "not_early_career" })
+      .where(eq(job.sourceId, "src_tr2"));
+    await trialEval(db(), ["src_tr2"]);
+    const { source: srcTable } = await import("@hirejuniors/db/schema");
+    const [s] = await db().select().from(srcTable).where(eq(srcTable.id, "src_tr2"));
+    expect(s.enabled).toBe(false);
+    expect(s.trial).toBe(false);
+    expect(s.disabledReason).toBe("no_junior_roles");
+  });
+
+  it("pending jobs (classification cap) → stays in trial", async () => {
+    const src = await trialSource("src_tr3");
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "t3" })]);
+    await trialEval(db(), ["src_tr3"]);
+    const { source: srcTable } = await import("@hirejuniors/db/schema");
+    const [s] = await db().select().from(srcTable).where(eq(srcTable.id, "src_tr3"));
+    expect(s.trial).toBe(true);
+    expect(s.enabled).toBe(true);
+  });
+});
+
+describe("no_junior_roles retry (ingestibleSources)", () => {
+  async function loadIds() {
+    const { ingestibleSources } = await import("@hirejuniors/db/queries");
+    return (await ingestibleSources(db())).map((r) => r.id);
+  }
+  const DAYS = 24 * 60 * 60 * 1000;
+
+  it("disabled 29d ago → loaded and re-enabled as trial", async () => {
+    await seedSource({
+      id: "src_retry29",
+      companyId: "cmp_ing01",
+      board: "retry29",
+      enabled: false,
+      disabledReason: "no_junior_roles",
+      lastRunAt: new Date(Date.now() - 29 * DAYS),
+    });
+    const ids = await loadIds();
+    expect(ids).toContain("src_retry29");
+    const { source: srcTable } = await import("@hirejuniors/db/schema");
+    const [s] = await db().select().from(srcTable).where(eq(srcTable.id, "src_retry29"));
+    expect(s.enabled).toBe(true);
+    expect(s.trial).toBe(true);
+    expect(s.disabledReason).toBeNull();
+  });
+
+  it("disabled 10d ago → not loaded", async () => {
+    await seedSource({
+      id: "src_retry10",
+      companyId: "cmp_ing01",
+      board: "retry10",
+      enabled: false,
+      disabledReason: "no_junior_roles",
+      lastRunAt: new Date(Date.now() - 10 * DAYS),
+    });
+    expect(await loadIds()).not.toContain("src_retry10");
+  });
+
+  it("manual disable is never loaded", async () => {
+    await seedSource({
+      id: "src_retryman",
+      companyId: "cmp_ing01",
+      board: "retryman",
+      enabled: false,
+      disabledReason: "manual",
+      lastRunAt: new Date(Date.now() - 90 * DAYS),
+    });
+    expect(await loadIds()).not.toContain("src_retryman");
+  });
+
+  it("re-enabled source that yields nothing is disabled again by trialEval", async () => {
+    const { source: srcTable } = await import("@hirejuniors/db/schema");
+    // src_retry29 is now enabled+trial from the test above; ingest an all-rejected feed
+    const src = (await db().select().from(srcTable).where(eq(srcTable.id, "src_retry29")))[0];
+    await upsertListings(db(), src, "ingco", [listing({ externalId: "r29" })]);
+    await db()
+      .update(job)
+      .set({ status: "rejected", rejectReason: "not_tech" })
+      .where(eq(job.sourceId, "src_retry29"));
+    await trialEval(db(), ["src_retry29"]);
+    const [s] = await db().select().from(srcTable).where(eq(srcTable.id, "src_retry29"));
+    expect(s.enabled).toBe(false);
+    expect(s.disabledReason).toBe("no_junior_roles");
   });
 });

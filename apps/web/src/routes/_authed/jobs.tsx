@@ -28,7 +28,9 @@ interface JobsSearch {
 
 export const Route = createFileRoute("/_authed/jobs")({
   validateSearch: (search: JobsSearch): JobsSearch => ({
-    status: search.status === "retired" || search.status === "active" ? search.status : undefined,
+    status: ["pending", "active", "review", "rejected", "retired"].includes(search.status ?? "")
+      ? (search.status as JobStatus)
+      : undefined,
     level: search.level || undefined,
     country: search.country || undefined,
     companyId: search.companyId || undefined,
@@ -39,6 +41,9 @@ export const Route = createFileRoute("/_authed/jobs")({
 
 const STATUS_OPTIONS = [
   { label: "Active", value: "active" },
+  { label: "Pending", value: "pending" },
+  { label: "Review", value: "review" },
+  { label: "Rejected", value: "rejected" },
   { label: "Retired", value: "retired" },
 ];
 const LEVEL_OPTIONS = [
@@ -150,7 +155,7 @@ function Jobs() {
         <Select
           label="Status"
           value={filters.status}
-          onValueChange={(v) => setFilter({ status: v === "retired" ? "retired" : "active" })}
+          onValueChange={(v) => setFilter({ status: v as JobStatus })}
           items={STATUS_OPTIONS}
         />
         <Select

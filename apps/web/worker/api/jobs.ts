@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { json, onApiError, validationHook } from "./errors";
 import * as svc from "../services/jobs";
 import { requireAdmin, requireScope, type PrincipalVars } from "../middleware/principal";
-import { ErrorResponse, JobList, JobListQuery, JobResult, JobUpdate } from "./schemas";
+import { ErrorResponse, JobApprove, JobList, JobListQuery, JobResult, JobUpdate } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
 
@@ -86,5 +86,49 @@ jobsApi.openapi(
     const db = drizzle(c.env.DB);
     const updated = await svc.setStatus(db, id, status);
     return c.json({ data: updated }, 200);
+  },
+);
+
+jobsApi.openapi(
+  createRoute({
+    method: "post",
+    path: "/jobs/{id}/approve",
+    tags: ["Jobs"],
+    security: [{ bearerAuth: [] }],
+    middleware: [requireScope("jobs", "write"), requireAdmin],
+    request: {
+      params: idParam,
+      body: { content: json(JobApprove), required: true },
+    },
+    responses: {
+      200: { content: json(JobResult), description: "Approved job" },
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const { level } = c.req.valid("json");
+    const db = drizzle(c.env.DB);
+    return c.json({ data: await svc.approve(db, id, level) }, 200);
+  },
+);
+
+jobsApi.openapi(
+  createRoute({
+    method: "post",
+    path: "/jobs/{id}/reject",
+    tags: ["Jobs"],
+    security: [{ bearerAuth: [] }],
+    middleware: [requireScope("jobs", "write"), requireAdmin],
+    request: { params: idParam },
+    responses: {
+      200: { content: json(JobResult), description: "Rejected job" },
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const db = drizzle(c.env.DB);
+    return c.json({ data: await svc.reject(db, id) }, 200);
   },
 );

@@ -1,4 +1,4 @@
-// IngestWorkflow — thin glue over ingest.ts/retire.ts (spec §Workflow).
+// IngestWorkflow — thin glue over ingest/classify/discover/retire (spec §Workflow).
 import {
   WorkflowEntrypoint,
   type WorkflowEvent,
@@ -6,9 +6,12 @@ import {
   type WorkflowStepConfig,
 } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
-import { enabledSources, finishIngestRun, jobsForLinkCheck } from "@hirejuniors/db/queries";
+import { finishIngestRun, ingestibleSources, jobsForLinkCheck } from "@hirejuniors/db/queries";
 import { ingestSource, recordSourceFailure, startRun, type SourceCounts } from "./ingest";
+import { classifyStep } from "./classify";
+import { CRAWL_HOSTS, crawlHost, discoverStep, newestCrawl, trialEval } from "./discover";
 import { expireJobs, linkCheckSlice } from "./retire";
+import { aiBinding } from "./ai";
 
 export interface IngestParams {
   trigger: "schedule" | "manual";
@@ -17,33 +20,70 @@ export interface IngestParams {
 const RETRY: WorkflowStepConfig = {
   retries: { limit: 3, delay: "5 seconds", backoff: "exponential" },
 };
-const LINK_CHECK_SLICES = 10;
+const LINK_CHECK_JOBS = 400;
 const LINK_CHECK_BATCH = 40;
+const CLASSIFY_STEPS = 25;
+const CLASSIFY_BATCH = 20;
+const DISCOVER_STEPS = 10; // ≤150 candidates per run
 
 export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
   async run(event: Readonly<WorkflowEvent<IngestParams>>, step: WorkflowStep) {
     const db = drizzle(this.env.DB);
+    const fetcher = fetch.bind(globalThis);
+    const ai = aiBinding(this.env.AI);
     const trigger = event.payload?.trigger ?? "schedule";
 
     const runId = await step.do("start", () => startRun(db, trigger, event.instanceId));
 
+    // Crawl — best-effort, every call wrapped; never fails the run.
+    const crawl = await step.do("crawl:index", () => newestCrawl(fetcher)).catch(() => null);
+    if (crawl) {
+      for (const { host, platform } of CRAWL_HOSTS) {
+        await step
+          .do(`discover:crawl:${host}`, () =>
+            crawlHost(db, fetcher, crawl.crawlId, crawl.cdxApi, host, platform),
+          )
+          .catch(() => 0);
+      }
+    }
+
+    const discovered = { n: 0 };
+    for (let n = 0; n < DISCOVER_STEPS; n++) {
+      const res = await step.do(`discover:${n + 1}`, () => discoverStep(db, fetcher));
+      discovered.n += res.found;
+      if (res.probed < 15) break;
+    }
+
     const sourceIds = await step.do("load sources", async () =>
-      (await enabledSources(db)).map((s) => s.id),
+      (await ingestibleSources(db)).map((s) => s.id),
     );
 
-    const totals = { fetched: 0, inserted: 0, updated: 0, reactivated: 0, retired: 0 };
+    const totals = {
+      fetched: 0,
+      inserted: 0,
+      updated: 0,
+      reactivated: 0,
+      retired: 0,
+      classified: 0,
+      rejected: 0,
+      review: 0,
+      discovered: discovered.n,
+      aiInputTokens: 0,
+    };
     let anyFailed = false;
+    const ingested: string[] = [];
 
     for (const sourceId of sourceIds) {
       try {
         const counts = (await step.do(`ingest:${sourceId}`, RETRY, () =>
-          ingestSource(db, runId, sourceId, fetch.bind(globalThis)),
+          ingestSource(db, runId, sourceId, fetcher),
         )) as SourceCounts;
         totals.fetched += counts.fetched;
         totals.inserted += counts.inserted;
         totals.updated += counts.updated;
         totals.reactivated += counts.reactivated;
         totals.retired += counts.retired;
+        ingested.push(sourceId);
       } catch (error) {
         anyFailed = true;
         const err = error instanceof Error ? error : new Error(String(error));
@@ -53,34 +93,49 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
       }
     }
 
+    // Classify — ≤25 steps × 20 jobs; a Clef error throws the step → retries.
+    for (let n = 0; n < CLASSIFY_STEPS; n++) {
+      const counts = await step.do(`classify:${n + 1}`, RETRY, () =>
+        classifyStep(db, ai, CLASSIFY_BATCH),
+      );
+      totals.classified += counts.classified;
+      totals.rejected += counts.rejected;
+      totals.review += counts.review;
+      totals.aiInputTokens += counts.inputTokens;
+      if (counts.classified + counts.rejected + counts.review === 0 && n > 0) break;
+      if (counts.classified + counts.rejected + counts.review < CLASSIFY_BATCH) {
+        // last batch may be short — keep looping until a step returns nothing
+      }
+    }
+
+    await step.do("trial", () => trialEval(db, ingested));
+
     totals.retired += await step.do("expire", () => expireJobs(db));
 
-    // Select once so stamping last_checked_at mid-run can't shift the window
-    // and skip (or re-pick) jobs — then fan out into <=10 slices of 40 ids.
+    const breakerNotes: string[] = [];
+    // Select once (≤400, nulls first) then fan out into 40-id slices.
     const linkCheckIds = await step.do("linkcheck:select", async () =>
-      (await jobsForLinkCheck(db, LINK_CHECK_SLICES * LINK_CHECK_BATCH)).map((j) => j.id),
+      (await jobsForLinkCheck(db, LINK_CHECK_JOBS)).map((j) => j.id),
     );
-    const slices = Math.min(LINK_CHECK_SLICES, Math.ceil(linkCheckIds.length / LINK_CHECK_BATCH));
+    const slices = Math.ceil(linkCheckIds.length / LINK_CHECK_BATCH);
     for (let n = 0; n < slices; n++) {
-      await step.do(`linkcheck:${n + 1}`, () =>
+      const res = await step.do(`linkcheck:${n + 1}`, () =>
         linkCheckSlice(
           db,
-          fetch.bind(globalThis),
+          fetcher,
+          ai,
           linkCheckIds.slice(n * LINK_CHECK_BATCH, (n + 1) * LINK_CHECK_BATCH),
         ),
       );
+      totals.retired += res.linkDead + res.closedPage;
+      if (res.breakerTripped) {
+        breakerNotes.push(`closed_page breaker tripped on slice ${n + 1}`);
+      }
     }
 
     await step.do("finish", async () => {
-      await finishIngestRun(
-        db,
-        runId,
-        anyFailed ? "partial" : "succeeded",
-        totals,
-        anyFailed ? "one or more sources failed" : undefined,
-      );
+      const status = anyFailed ? "partial" : "succeeded";
+      await finishIngestRun(db, runId, status, totals, breakerNotes.join("; ") || undefined);
     });
-
-    return { runId, ...totals };
   }
 }

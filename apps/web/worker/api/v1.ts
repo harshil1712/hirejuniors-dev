@@ -11,6 +11,7 @@ import { jobsApi } from "./jobs";
 import { companiesApi } from "./companies";
 import { sourcesApi } from "./sources";
 import { runsApi } from "./runs";
+import { discoveryApi } from "./discovery";
 import { ErrorResponse, MeResult } from "./schemas";
 
 type AppEnv = { Bindings: Env; Variables: PrincipalVars };
@@ -95,6 +96,7 @@ export function createV1Api({ publicSpec }: { publicSpec: boolean }) {
   app.route("/", companiesApi);
   app.route("/", sourcesApi);
   app.route("/", runsApi);
+  app.route("/", discoveryApi);
 
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",

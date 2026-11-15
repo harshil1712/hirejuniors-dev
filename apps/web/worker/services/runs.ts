@@ -23,6 +23,12 @@ function toApi(row: typeof ingestRun.$inferSelect): IngestRun {
     updated: row.updated,
     reactivated: row.reactivated,
     retired: row.retired,
+    classified: row.classified,
+    rejected: row.rejected,
+    review: row.review,
+    discovered: row.discovered,
+    aiInputTokens: row.aiInputTokens,
+    aiOutputTokens: row.aiOutputTokens,
     error: row.error,
   };
 }

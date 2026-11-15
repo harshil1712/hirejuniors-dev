@@ -42,6 +42,16 @@ export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> 
     if (!res.ok) throw new Error(`lever ${res.status} for board ${src.board}`);
     return this.toListings(await res.json(), src);
   },
+  async probe(fetcher, board) {
+    try {
+      const res = await fetcher(`https://api.lever.co/v0/postings/${board}?mode=json`);
+      if (!res.ok) return { ok: false };
+      z.array(z.object({ id: z.string() })).parse(await res.json());
+      return { ok: true };
+    } catch {
+      return { ok: false, networkError: true };
+    }
+  },
   toListings(payload, _src): RawListing[] {
     const postings = responseSchema.parse(payload);
     return postings.map((p) => ({

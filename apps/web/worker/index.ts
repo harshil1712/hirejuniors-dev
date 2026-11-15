@@ -16,10 +16,11 @@ import { jobsApi } from "./api/jobs";
 import { companiesApi } from "./api/companies";
 import { sourcesApi } from "./api/sources";
 import { runsApi } from "./api/runs";
+import { discoveryApi } from "./api/discovery";
+import { discoveryRoutes } from "./routes/discovery";
 import { dashboardApi } from "./api/dashboard";
 import { apiKeysApi } from "./api/api-keys";
 import { createV1Api } from "./api/v1";
-import { discoveryRoutes } from "./routes/discovery";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -67,7 +68,7 @@ app.route("/", meRoutes);
 
 // Session-authenticated dashboard APIs for the web app — the same routers
 // /api/v1 mounts with API-key auth (dashboard summary stays session-only).
-for (const name of ["jobs", "companies", "sources", "runs", "dashboard"]) {
+for (const name of ["jobs", "companies", "sources", "runs", "dashboard", "discovery"]) {
   app.use(`/api/${name}`, sessionPrincipal);
   app.use(`/api/${name}/*`, sessionPrincipal);
 }
@@ -75,6 +76,7 @@ app.route("/api", jobsApi);
 app.route("/api", companiesApi);
 app.route("/api", sourcesApi);
 app.route("/api", runsApi);
+app.route("/api", discoveryApi);
 app.route("/api", dashboardApi);
 
 // Key management (Settings → API keys) — session-only router.

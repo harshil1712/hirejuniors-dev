@@ -17,6 +17,10 @@ export interface JobPostingInput {
   postedAt: Date | null;
   firstSeenAt: Date;
   validThrough: Date | null;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  salaryCurrency?: string | null;
+  salaryPeriod?: "HOUR" | "WEEK" | "MONTH" | "YEAR" | null;
   externalId: string;
   canonicalUrl: string;
   company: { name: string; homepageUrl: string | null; logoUrl: string | null };
@@ -48,6 +52,11 @@ export interface JobPosting {
       addressRegion?: string;
       addressCountry?: string;
     };
+  };
+  baseSalary?: {
+    "@type": "MonetaryAmount";
+    currency: string;
+    value: { "@type": "QuantitativeValue"; minValue: number; maxValue: number; unitText: string };
   };
 }
 
@@ -99,6 +108,19 @@ export function buildJobPosting(j: JobPostingInput): JobPosting {
     if (j.region) address.addressRegion = j.region;
     if (j.countryCode) address.addressCountry = j.countryCode;
     out.jobLocation = { "@type": "Place", address };
+  }
+
+  if (j.salaryMin && j.salaryMax && j.salaryCurrency && j.salaryPeriod) {
+    out.baseSalary = {
+      "@type": "MonetaryAmount",
+      currency: j.salaryCurrency,
+      value: {
+        "@type": "QuantitativeValue",
+        minValue: j.salaryMin,
+        maxValue: j.salaryMax,
+        unitText: j.salaryPeriod,
+      },
+    };
   }
   return out;
 }
