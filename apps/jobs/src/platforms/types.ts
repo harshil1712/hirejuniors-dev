@@ -16,17 +16,34 @@ export interface RawListing {
   descriptionHtml?: string;
   postedAt?: Date;
   updatedAt?: Date;
+  /** careers_page re-seen links — refresh lastSeen/missedRuns only, keep the
+   * stored fields (no page was fetched this run). */
+  reSeen?: boolean;
 }
 
 export type SourceRow = typeof source.$inferSelect;
 
 export type Fetcher = typeof fetch;
 
+/** Adapter context — spec §Careers-page sources. JSON platforms use only
+ * `fetcher`; careers_page needs `browser` (listing + job pages) and `ai`
+ * (link filter + field extraction). `knownExternalIds` = externalIds already
+ * stored for the source, so careers_page re-sees existing links without
+ * fetching their pages. */
+export interface AdapterCtx {
+  fetcher: Fetcher;
+  browser?: import("../browser").Browser;
+  ai?: import("../ai").AiModels;
+  knownExternalIds?: Set<string>;
+  /** Accumulates AI input tokens spent by the adapter (run totals). */
+  aiTokens?: { n: number };
+}
+
 export interface PlatformAdapter<C = unknown, Payload = unknown> {
   /** zod schema for `source.config` JSON. */
   configSchema: z.ZodType<C>;
   parseConfig(json: string): C;
-  fetchListings(fetcher: Fetcher, source: SourceRow): Promise<RawListing[]>;
+  fetchListings(ctx: AdapterCtx, source: SourceRow): Promise<RawListing[]>;
   /** Pure transform of a raw API payload — the unit-testable half. */
   toListings(payload: Payload, source: SourceRow): RawListing[];
   /** Discovery probe: one GET of the listings endpoint; ok = HTTP 200 and the

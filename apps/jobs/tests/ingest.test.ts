@@ -146,7 +146,7 @@ describe("shrink guard (ingestSource)", () => {
     const fetcher = fakeFetcher([
       { id: "l1", text: "Graduate Eng", hostedUrl: "https://x", categories: {} },
     ]);
-    await expect(ingestSource(db(), "run_x", src.id, fetcher)).rejects.toThrow(/shrank/);
+    await expect(ingestSource(db(), "run_x", src.id, { fetcher })).rejects.toThrow(/shrank/);
   });
 
   it("0 fetched with active jobs → failure", async () => {
@@ -154,7 +154,7 @@ describe("shrink guard (ingestSource)", () => {
     await upsertListings(db(), src, "ingco", [listing({ externalId: "s2" })]);
     await db().update(job).set({ status: "active" }).where(eq(job.sourceId, "src_shrink02"));
     const fetcher = fakeFetcher([]);
-    await expect(ingestSource(db(), "run_x", src.id, fetcher)).rejects.toThrow(/shrank/);
+    await expect(ingestSource(db(), "run_x", src.id, { fetcher })).rejects.toThrow(/shrank/);
   });
 });
 

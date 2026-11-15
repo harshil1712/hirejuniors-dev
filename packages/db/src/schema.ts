@@ -38,7 +38,9 @@ export const source = sqliteTable(
     companyId: text("company_id")
       .notNull()
       .references(() => company.id, { onDelete: "cascade" }),
-    platform: text("platform", { enum: ["greenhouse", "lever", "ashby", "amazon_jobs"] }).notNull(),
+    platform: text("platform", {
+      enum: ["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"],
+    }).notNull(),
     /** Greenhouse board token / Lever site / Ashby board name / "amazon". */
     board: text("board").notNull(),
     /** Platform-specific JSON, validated per adapter with zod. */
@@ -156,6 +158,7 @@ export const ingestRun = sqliteTable("ingest_run", {
   discovered: integer("discovered").notNull().default(0),
   aiInputTokens: integer("ai_input_tokens").notNull().default(0),
   aiOutputTokens: integer("ai_output_tokens").notNull().default(0),
+  browserMs: integer("browser_ms").notNull().default(0),
   error: text("error"),
 });
 
@@ -170,7 +173,9 @@ export const discoveryCandidate = sqliteTable(
     })
       .notNull()
       .default("queued"),
-    platform: text("platform", { enum: ["greenhouse", "lever", "ashby", "amazon_jobs"] }),
+    platform: text("platform", {
+      enum: ["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"],
+    }),
     board: text("board"),
     sourceId: text("source_id").references(() => source.id, { onDelete: "set null" }),
     error: text("error"),

@@ -109,6 +109,7 @@ CREATE TABLE ingest_run (
   discovered integer NOT NULL DEFAULT 0,
   ai_input_tokens integer NOT NULL DEFAULT 0,
   ai_output_tokens integer NOT NULL DEFAULT 0,
+  browser_ms integer NOT NULL DEFAULT 0,
   error text
 );
 --> statement-breakpoint

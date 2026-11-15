@@ -29,6 +29,7 @@ function toApi(row: typeof ingestRun.$inferSelect): IngestRun {
     discovered: row.discovered,
     aiInputTokens: row.aiInputTokens,
     aiOutputTokens: row.aiOutputTokens,
+    browserMs: row.browserMs,
     error: row.error,
   };
 }

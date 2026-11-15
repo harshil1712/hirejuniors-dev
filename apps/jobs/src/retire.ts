@@ -7,6 +7,7 @@ import { chunks, expirableJobs } from "@hirejuniors/db/queries";
 import type { Db } from "./ingest";
 import type { Fetcher } from "./platforms";
 import { PAGE_OPEN_QUESTION, type AiModels } from "./ai";
+import type { Browser } from "./browser";
 import { htmlToText } from "./html";
 
 /** Retire `expired`: valid_through passed, or posted/first-seen > 90 days. */
@@ -63,6 +64,7 @@ export async function linkCheckSlice(
   fetcher: Fetcher,
   ai: AiModels,
   ids: string[],
+  browser?: Browser,
 ): Promise<SliceResult> {
   const result: SliceResult = { checked: 0, linkDead: 0, closedPage: 0, breakerTripped: false };
   if (ids.length === 0) return result;
@@ -85,7 +87,19 @@ export async function linkCheckSlice(
       }
       const type = res.headers.get("content-type") ?? "";
       if (res.status >= 200 && res.status < 300 && type.includes("text/html")) {
-        const text = htmlToText(await res.text()).slice(0, 6000);
+        const html = await res.text();
+        // Page check reads Browser Run `markdown`; on any browser error fall
+        // back to the fetched HTML (spec §Browser Run / page check).
+        let text: string;
+        if (browser) {
+          try {
+            text = (await browser.markdown(row.applyUrl)).slice(0, 6000);
+          } catch {
+            text = htmlToText(html).slice(0, 6000);
+          }
+        } else {
+          text = htmlToText(html).slice(0, 6000);
+        }
         if (text.length < 200) {
           verdicts.push({ id: row.id }); // JS-rendered page — just stamp
           continue;

@@ -138,7 +138,8 @@ function Runs() {
                       <Text variant="secondary" size="sm">
                         fetched {r.fetched} · +{r.inserted} · ↻{r.updated} · −{r.retired} ·
                         classified {r.classified} · review {r.review} · rejected {r.rejected} ·
-                        found {r.discovered} · ai in/out {r.aiInputTokens}/{r.aiOutputTokens}
+                        found {r.discovered} · ai in/out {r.aiInputTokens}/{r.aiOutputTokens} ·
+                        browser {r.browserMs}ms
                         {r.error ? ` · ${r.error}` : ""}
                       </Text>
                     </Table.Cell>

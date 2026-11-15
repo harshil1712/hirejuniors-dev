@@ -246,7 +246,7 @@ export const CompanyResult = z.object({ data: Company }).openapi("CompanyResult"
 // ---------------------------------------------------------------------------
 
 export const SourcePlatform = z
-  .enum(["greenhouse", "lever", "ashby", "amazon_jobs"])
+  .enum(["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"])
   .openapi("SourcePlatform", { example: "greenhouse" });
 
 export const Source = z
@@ -290,7 +290,8 @@ export const SourceCreate = z
   .object({
     companyId: z.string().openapi({ example: COMPANY_EXAMPLE.id }),
     platform: SourcePlatform,
-    board: BoardSlug.openapi({ example: "cloudflare" }),
+    // Board token for ATS platforms; a listing URL for careers_page.
+    board: z.union([BoardSlug, z.string().url()]).openapi({ example: "cloudflare" }),
     config: z.string().max(4000).default("{}").openapi({ example: "{}" }),
     includeAll: z.boolean().default(false),
     enabled: z.boolean().default(true),
@@ -312,7 +313,7 @@ export const SourceUpdate = SourcePatchFields.refine(
 export const SourcePreview = z
   .object({
     platform: SourcePlatform,
-    board: BoardSlug.openapi({ example: "cloudflare" }),
+    board: z.union([BoardSlug, z.string().url()]).openapi({ example: "cloudflare" }),
     config: z.string().max(4000).default("{}").openapi({ example: "{}" }),
     includeAll: z.boolean().default(false),
   })
@@ -383,6 +384,7 @@ export const IngestRun = z
     discovered: z.number().int().openapi({ example: 7 }),
     aiInputTokens: z.number().int().openapi({ example: 12500 }),
     aiOutputTokens: z.number().int().openapi({ example: 800 }),
+    browserMs: z.number().int().openapi({ example: 4200 }),
     error: z.string().nullable().openapi({ example: null }),
   })
   .openapi("IngestRun");
@@ -564,7 +566,7 @@ export const DiscoveryCandidate = z
     origin: z.enum(["manual", "crawl"]),
     input: z.string().openapi({ example: "stripe.com" }),
     status: z.enum(["queued", "found", "not_found", "duplicate", "failed"]),
-    platform: z.enum(["greenhouse", "lever", "ashby", "amazon_jobs"]).nullable(),
+    platform: z.enum(["greenhouse", "lever", "ashby", "amazon_jobs", "careers_page"]).nullable(),
     board: z.string().nullable(),
     sourceId: z.string().nullable(),
     error: z.string().nullable(),

@@ -35,7 +35,8 @@ function parseDate(value: string | undefined): Date | undefined {
 export const amazonJobs: PlatformAdapter<z.infer<typeof configSchema>, AmazonPayload> = {
   configSchema,
   parseConfig: (json) => configSchema.parse(JSON.parse(json)),
-  async fetchListings(fetcher, src) {
+  async fetchListings(ctx, src) {
+    const fetcher = ctx.fetcher;
     const config = this.parseConfig(src.config);
     const res = await fetcher(`https://www.amazon.jobs/en/search.json?${config.query}`);
     if (!res.ok) throw new Error(`amazon.jobs ${res.status}`);

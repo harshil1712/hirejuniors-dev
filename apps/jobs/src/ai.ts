@@ -24,8 +24,18 @@ export interface ExtractResult {
   inputTokens: number;
 }
 
-export type DecideQuestions = typeof DECIDE_QUESTIONS | typeof PAGE_OPEN_QUESTION;
-export type ExtractFields = typeof EXTRACT_FIELDS;
+export interface DecideQuestion {
+  type: "choice" | "noul";
+  instructions: string;
+  criteria?: Record<string, string>;
+}
+export type DecideQuestions = Record<string, DecideQuestion>;
+export interface ExtractField {
+  type: string;
+  instructions: string;
+  decimals?: number;
+}
+export type ExtractFields = Record<string, ExtractField>;
 
 export interface AiModels {
   decide(model: DecideModel, state: string, questions: DecideQuestions): Promise<DecideResult>;
@@ -191,3 +201,45 @@ export const PAGE_OPEN_QUESTION = {
       "Is this page a specific job posting that is still open and accepting applications? Answer no for careers home pages, search pages, 'job not found' or 'no longer accepting applications' pages.",
   },
 } as const;
+
+// --- Careers-page sources (spec §Careers-page sources) — verbatim. ---
+
+/** One `noul` per link, id `l{i}` (spec §Careers listing parse step 2). */
+export function jobLinkQuestion(i: number) {
+  return {
+    [`l${i}`]: {
+      type: "noul",
+      instructions: `Is link ${i} a link to one individual job posting (not a category, search, team, location or general careers page)?`,
+    },
+  } as const satisfies DecideQuestions;
+}
+
+/** State prefix for the listing parse — spec §Careers step 2. */
+export const JOB_LINK_STATE_PREFIX = "Links from the careers page ";
+
+/** Discovery one-hop question (spec §Discovery step 5). */
+export function oneHopQuestions(links: { text: string; url: string }[]) {
+  const criteria = {
+    ...Object.fromEntries(links.map((l, i) => [`link_${i}`, `${l.text} → ${l.url}`])),
+    none: "None of these links lists open positions",
+  };
+  return {
+    open_positions: {
+      type: "choice",
+      instructions: "Which link leads to the page that lists the company's open job positions?",
+      criteria,
+    },
+  } as const satisfies DecideQuestions;
+}
+
+/** Clairic fields for a careers-page job posting (spec §Careers ingest). */
+export const CAREERS_PAGE_FIELDS = {
+  location: {
+    type: "text",
+    instructions: "Where the job is based, as written on the page",
+  },
+  posted_date: {
+    type: "date",
+    instructions: "Date the job was posted",
+  },
+} as const satisfies ExtractFields;

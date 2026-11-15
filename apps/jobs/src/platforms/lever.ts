@@ -36,7 +36,8 @@ export type LeverPayload = z.input<typeof responseSchema>;
 export const lever: PlatformAdapter<z.infer<typeof configSchema>, LeverPayload> = {
   configSchema,
   parseConfig: (json) => configSchema.parse(JSON.parse(json)),
-  async fetchListings(fetcher, src) {
+  async fetchListings(ctx, src) {
+    const fetcher = ctx.fetcher;
     this.parseConfig(src.config);
     const res = await fetcher(`https://api.lever.co/v0/postings/${src.board}?mode=json`);
     if (!res.ok) throw new Error(`lever ${res.status} for board ${src.board}`);

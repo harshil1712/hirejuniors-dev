@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { job } from "@hirejuniors/db/schema";
 import { classifyLevel, classifyStep, isExcluded } from "../src/classify";
-import type { AiModels, DecideModel, DecideResult, QuestionAnswer } from "../src/ai";
+import type { DecideModel, DecideResult, QuestionAnswer } from "../src/ai";
 import { db, migrate, seedCompany, seedSource } from "./helpers";
 
 beforeAll(migrate);

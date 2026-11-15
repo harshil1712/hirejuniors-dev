@@ -31,7 +31,8 @@ async function get(fetcher: Fetcher, url: string) {
 export const greenhouse: PlatformAdapter<z.infer<typeof configSchema>, GreenhousePayload> = {
   configSchema,
   parseConfig: (json) => configSchema.parse(JSON.parse(json)),
-  async fetchListings(fetcher, src) {
+  async fetchListings(ctx, src) {
+    const fetcher = ctx.fetcher;
     const config = this.parseConfig(src.config);
     const jobs = config.departmentIds?.length
       ? (

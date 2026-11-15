@@ -33,7 +33,8 @@ export type AshbyPayload = z.input<typeof responseSchema>;
 export const ashby: PlatformAdapter<z.infer<typeof configSchema>, AshbyPayload> = {
   configSchema,
   parseConfig: (json) => configSchema.parse(JSON.parse(json)),
-  async fetchListings(fetcher, src) {
+  async fetchListings(ctx, src) {
+    const fetcher = ctx.fetcher;
     this.parseConfig(src.config);
     const res = await fetcher(`https://api.ashbyhq.com/posting-api/job-board/${src.board}`);
     if (!res.ok) throw new Error(`ashby ${res.status} for board ${src.board}`);

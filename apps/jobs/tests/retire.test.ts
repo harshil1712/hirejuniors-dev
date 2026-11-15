@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vite-plus/test";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { job } from "@hirejuniors/db/schema";
 import { expireJobs, linkCheckSlice } from "../src/retire";
 import type { AiModels } from "../src/ai";
@@ -175,5 +175,61 @@ describe("linkCheckSlice", () => {
     const j = await getJob(id);
     expect(j.status).toBe("active");
     expect(j.lastCheckedAt).toBeNull();
+  });
+});
+
+describe("linkCheckSlice — Browser Run markdown", () => {
+  const okBrowser = (md: string, calls?: string[]) => ({
+    msUsed: 0,
+    links: () => Promise.reject(new Error("no")),
+    markdown: (u: string) => {
+      calls?.push(u);
+      return Promise.resolve(md);
+    },
+  });
+  const bigMd = Array.from({ length: 40 }, (_, i) => `Markdown line ${i} of a real job post.`).join(
+    "\n",
+  );
+
+  it("browser markdown is used for the page check", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/bwpage" });
+    const calls: string[] = [];
+    let state = "";
+    const spyAi: AiModels = {
+      decide: (_m, s) => {
+        state = s;
+        return Promise.resolve({
+          answers: { open: { type: "noul", noul: 0.5 } },
+          inputTokens: 1,
+        });
+      },
+      extract: () => Promise.reject(new Error("no")),
+    };
+    const res = await linkCheckSlice(db(), fetcher({}), spyAi, [id], okBrowser(bigMd, calls));
+    expect(res.checked).toBe(1);
+    expect(calls).toEqual(["https://x.test/bwpage"]);
+    expect(state).toContain("Markdown line");
+    expect((await getJob(id)).status).toBe("active");
+  });
+
+  it("browser error falls back to htmlToText", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/bwerr" });
+    const failing = {
+      msUsed: 0,
+      links: () => Promise.reject(new Error("no")),
+      markdown: () => Promise.reject(new Error("browser down")),
+    };
+    const res = await linkCheckSlice(db(), fetcher({}), ai(0.5), [id], failing);
+    expect(res.checked).toBe(1);
+    expect((await getJob(id)).lastCheckedAt).not.toBeNull();
+  });
+
+  it("browser markdown under 200 chars → stamped, no AI call", async () => {
+    const id = await insertJob({ applyUrl: "https://x.test/bwshort" });
+    const res = await linkCheckSlice(db(), fetcher({}), noAi, [id], okBrowser("tiny"));
+    expect(res.checked).toBe(1);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).not.toBeNull();
   });
 });

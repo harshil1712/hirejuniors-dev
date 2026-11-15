@@ -46,7 +46,7 @@ describe("greenhouse adapter", () => {
       board: "cloudflare",
       config: '{"departmentIds":[70480,70480]}',
     });
-    const listings = await greenhouse.fetchListings(fetcher, s);
+    const listings = await greenhouse.fetchListings({ fetcher }, s);
     expect(listings.length).toBe(5); // same dept twice, deduped by job id
   });
 });
@@ -104,7 +104,7 @@ describe("amazon_jobs adapter", () => {
       url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
       return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
     }) as typeof fetch;
-    await amazonJobs.fetchListings(fetcher, source);
+    await amazonJobs.fetchListings({ fetcher }, source);
     expect(url).toBe("https://www.amazon.jobs/en/search.json?result_limit=5");
   });
 });

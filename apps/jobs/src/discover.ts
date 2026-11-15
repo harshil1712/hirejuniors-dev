@@ -6,7 +6,10 @@ import { z } from "zod";
 import { company, discoveryCandidate, discoveryCursor, job, source } from "@hirejuniors/db/schema";
 import type { Db } from "./ingest";
 import type { BatchItem } from "drizzle-orm/batch";
-import { adapterFor, type Fetcher } from "./platforms";
+import { adapterFor, type AdapterCtx, type Fetcher } from "./platforms";
+import { extractMarkdownLinks, normaliseListingUrl, parseJobLinks } from "./platforms/careers-page";
+import { oneHopQuestions, type AiModels } from "./ai";
+import type { Browser } from "./browser";
 
 // Spec §Discovery — verbatim patterns, first match wins, in this order.
 const ATS_PATTERNS: { platform: "greenhouse" | "lever" | "ashby"; re: RegExp }[] = [
@@ -85,13 +88,16 @@ async function uniqueCompanySlug(db: Db, name: string): Promise<string> {
 }
 
 /** Create company + trial source for a probed candidate, or mark duplicate. */
+type FoundPlatform = "greenhouse" | "lever" | "ashby" | "careers_page";
+
 async function createFound(
   db: Db,
   cand: typeof discoveryCandidate.$inferSelect,
-  platform: "greenhouse" | "lever" | "ashby",
+  platform: FoundPlatform,
   board: string,
   companyName: string | undefined,
   homepageUrl: string | null,
+  config = "{}",
 ) {
   const existing = await db
     .select({ id: source.id })
@@ -126,7 +132,7 @@ async function createFound(
       companyId,
       platform,
       board,
-      config: "{}",
+      config,
       includeAll: false,
       enabled: true,
       origin: "discovered",
@@ -150,12 +156,20 @@ async function tryProbe(
   return adapter.probe(fetcher, board);
 }
 
+export interface DiscoverCtx {
+  fetcher: Fetcher;
+  browser?: Browser;
+  ai?: AiModels;
+}
+
 /** One discover step: probe up to `limit` queued candidates, manual first. */
 export async function discoverStep(
   db: Db,
-  fetcher: Fetcher,
+  ctx: DiscoverCtx,
   limit = DISCOVERY_STEP_SIZE,
-): Promise<{ probed: number; found: number }> {
+): Promise<{ probed: number; found: number; aiInputTokens: number }> {
+  const { fetcher, browser, ai } = ctx;
+  const aiTokens = { n: 0 };
   const queued = await db
     .select()
     .from(discoveryCandidate)
@@ -212,11 +226,24 @@ export async function discoverStep(
     ];
     let links: { platform: "greenhouse" | "lever" | "ashby"; board: string }[] = [];
     let allFetchesFailed = true;
+    // First step-1 page that rendered (Browser Run or fetch) — step 5 input.
+    let renderedUrl: string | null = null;
     for (const url of urls) {
-      const html = await fetchText(fetcher, url);
-      if (html === null) continue;
+      // Spec §Discovery step 1: Browser Run `links` (rendered, so script-
+      // injected boards count); on any browser error fall back to fetch.
+      let text: string | null = null;
+      if (browser) {
+        try {
+          text = (await browser.links(url)).join("\n");
+        } catch {
+          text = null;
+        }
+      }
+      if (text === null) text = await fetchText(fetcher, url);
+      if (text === null) continue;
       allFetchesFailed = false;
-      links = atsLinks(html);
+      renderedUrl ??= url;
+      links = atsLinks(text);
       if (links.length) break;
     }
 
@@ -256,6 +283,63 @@ export async function discoverStep(
     }
     if (!resolved && allFetchesFailed && !anyRealAnswer) outcome = "failed";
 
+    // Spec §Discovery step 5 — careers-page fallback. No ATS board found but
+    // a step-1 page rendered: run the careers-page listing parse on it; ≥1
+    // job link → found. 0 links → one-hop choice, parse the chosen page.
+    if (!resolved && outcome !== "failed" && renderedUrl && browser && ai) {
+      const cctx: AdapterCtx = { fetcher, browser, ai, aiTokens };
+      let listingUrl = renderedUrl;
+      let jobLinks: { text: string; url: string }[] = [];
+      try {
+        jobLinks = await parseJobLinks(cctx, listingUrl);
+      } catch {
+        jobLinks = [];
+      }
+      if (jobLinks.length === 0) {
+        // One-hop: ≤40 same-site links from the rendered markdown → one
+        // clef-flash choice; accept non-"none" with p ≥ 0.60.
+        try {
+          const md = await browser.markdown(renderedUrl);
+          const sameSite = extractMarkdownLinks(md, renderedUrl, true).slice(0, 40);
+          if (sameSite.length > 0) {
+            const state = sameSite.map((l, i) => `${i}. ${l.text} → ${l.url}`).join("\n");
+            const res = await ai.decide("clef-flash", state, oneHopQuestions(sameSite));
+            aiTokens.n += res.inputTokens;
+            const ans = res.answers.open_positions;
+            if (ans && ans.type === "choice" && ans.choice !== "none") {
+              const p = ans.probabilities[ans.choice] ?? 0;
+              const idx = Number(ans.choice.slice("link_".length));
+              if (p >= 0.6 && Number.isInteger(idx) && sameSite[idx]) {
+                const chosen = sameSite[idx].url;
+                try {
+                  jobLinks = await parseJobLinks(cctx, chosen);
+                  if (jobLinks.length > 0) listingUrl = chosen;
+                } catch {
+                  jobLinks = [];
+                }
+              }
+            }
+          }
+        } catch {
+          // browser/ai error on the one-hop — leave jobLinks empty
+        }
+      }
+      if (jobLinks.length > 0) {
+        const board = normaliseListingUrl(listingUrl);
+        outcome = await createFound(
+          db,
+          cand,
+          "careers_page",
+          board,
+          titleCase(d.split(".")[0]),
+          `https://${d}`,
+          JSON.stringify({ listingUrl }),
+        );
+        if (outcome === "found") found++;
+        continue;
+      }
+    }
+
     if (resolved) {
       outcome = await createFound(
         db,
@@ -277,7 +361,7 @@ export async function discoverStep(
     }
     if (outcome === "found") found++;
   }
-  return { probed: queued.length, found };
+  return { probed: queued.length, found, aiInputTokens: aiTokens.n };
 }
 
 /** Normalise a pasted domain to lower-case bare host (shared with apps/web). */

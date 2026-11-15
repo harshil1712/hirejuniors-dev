@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { discoveryCandidate, source } from "@hirejuniors/db/schema";
-import { addManualCandidates, crawlHost, discoverStep, normalizeDomain } from "../src/discover";
+import { crawlHost, discoverStep, normalizeDomain } from "../src/discover";
 import { db, migrate, seedCompany, seedSource } from "./helpers";
 
 beforeAll(migrate);
@@ -64,7 +64,7 @@ describe("discoverStep", () => {
       }),
       "boards-api.greenhouse.io/v1/boards/acmeco": greenhouseOk(),
     });
-    const res = await discoverStep(db(), f);
+    const res = await discoverStep(db(), { fetcher: f });
     expect(res.probed).toBeGreaterThanOrEqual(1);
     const c = await getCand("dsc_a1");
     expect(c.status).toBe("found");
@@ -81,7 +81,7 @@ describe("discoverStep", () => {
       }),
       "api.lever.co/v0/postings/betaco": leverOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_b1");
     expect(c.platform).toBe("lever");
     expect(c.board).toBe("betaco");
@@ -96,7 +96,7 @@ describe("discoverStep", () => {
       ),
       "api.ashbyhq.com/posting-api/job-board/gammaco": ashbyOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_c1");
     expect(c.board).toBe("gammaco");
     expect(c.platform).toBe("ashby");
@@ -110,7 +110,7 @@ describe("discoverStep", () => {
       }),
       "api.lever.co/v0/postings/probeonly": leverOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_d1");
     expect(c.status).toBe("found");
     expect(c.platform).toBe("lever");
@@ -124,7 +124,7 @@ describe("discoverStep", () => {
         headers: { "content-type": "text/html" },
       }),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     expect((await getCand("dsc_e1")).status).toBe("not_found");
   });
 
@@ -136,7 +136,7 @@ describe("discoverStep", () => {
       "api.lever.co": "error",
       "api.ashbyhq.com": "error",
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_f1");
     expect(c.status).toBe("failed");
     expect(c.attempts).toBe(1);
@@ -151,7 +151,7 @@ describe("discoverStep", () => {
       board: "dupco",
     });
     await cand("dsc_g1", "lever:dupco", "crawl");
-    await discoverStep(db(), fetcher({ "api.lever.co/v0/postings/dupco": leverOk() }));
+    await discoverStep(db(), { fetcher: fetcher({ "api.lever.co/v0/postings/dupco": leverOk() }) });
     const c = await getCand("dsc_g1");
     expect(c.status).toBe("duplicate");
     expect(c.sourceId).toBe(src.id);
@@ -160,10 +160,9 @@ describe("discoverStep", () => {
   it("company slug collision → -2", async () => {
     await seedCompany({ id: "cmp_gh01", slug: "gh-co", name: "GH Co" });
     await cand("dsc_h1", "greenhouse:ghco", "crawl");
-    await discoverStep(
-      db(),
-      fetcher({ "boards-api.greenhouse.io/v1/boards/ghco/jobs": greenhouseOk() }),
-    );
+    await discoverStep(db(), {
+      fetcher: fetcher({ "boards-api.greenhouse.io/v1/boards/ghco/jobs": greenhouseOk() }),
+    });
     const c = await getCand("dsc_h1");
     expect(c.status).toBe("found");
     const [s] = await db().select().from(source).where(eq(source.id, c.sourceId!));
@@ -236,7 +235,7 @@ describe("manual flow — URL order and outcomes", () => {
       ),
       "api.ashbyhq.com/posting-api/job-board/careersco": ashbyOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_m1");
     expect(c.status).toBe("found");
     expect(c.platform).toBe("ashby");
@@ -250,7 +249,7 @@ describe("manual flow — URL order and outcomes", () => {
       }),
       "boards-api.greenhouse.io/v1/boards/subco": greenhouseOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_m2");
     expect(c.status).toBe("found");
     expect(c.board).toBe("subco");
@@ -262,7 +261,7 @@ describe("manual flow — URL order and outcomes", () => {
       "guessco.dev": "error", // covers /careers, /jobs, apex
       "boards-api.greenhouse.io/v1/boards/guessco": greenhouseOk(),
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_m3");
     expect(c.status).toBe("found");
     expect(c.board).toBe("guessco");
@@ -276,7 +275,7 @@ describe("manual flow — URL order and outcomes", () => {
       "api.lever.co": "error",
       "api.ashbyhq.com": "error",
     });
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     const c = await getCand("dsc_m4");
     expect(c.status).toBe("failed");
     expect(c.attempts).toBe(1);
@@ -285,7 +284,7 @@ describe("manual flow — URL order and outcomes", () => {
   it("probes return 404 → not_found, not failed", async () => {
     await cand("dsc_m5", "realdead.dev");
     const f = fetcher({}); // every route → 404 real answer
-    await discoverStep(db(), f);
+    await discoverStep(db(), { fetcher: f });
     expect((await getCand("dsc_m5")).status).toBe("not_found");
   });
 
@@ -301,7 +300,7 @@ describe("manual flow — URL order and outcomes", () => {
       "api.lever.co/v0/postings/first": leverOk(),
       "api.ashbyhq.com": "error",
     });
-    await discoverStep(db(), f, 1);
+    await discoverStep(db(), { fetcher: f }, 1);
     const manual = await getCand("dsc_new_manual");
     expect(manual.attempts).toBe(1); // probed first despite being newer
   });

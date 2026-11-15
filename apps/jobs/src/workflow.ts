@@ -12,6 +12,8 @@ import { classifyStep } from "./classify";
 import { CRAWL_HOSTS, crawlHost, discoverStep, newestCrawl, trialEval } from "./discover";
 import { expireJobs, linkCheckSlice } from "./retire";
 import { aiBinding } from "./ai";
+import { browserBinding } from "./browser";
+import type { AdapterCtx } from "./platforms";
 
 export interface IngestParams {
   trigger: "schedule" | "manual";
@@ -20,6 +22,9 @@ export interface IngestParams {
 const RETRY: WorkflowStepConfig = {
   retries: { limit: 3, delay: "5 seconds", backoff: "exponential" },
 };
+// Careers-page ingest fetches one page per new link — needs a longer step
+// timeout than the JSON feeds (spec §Careers-page ingest).
+const INGEST_STEP: WorkflowStepConfig = { ...RETRY, timeout: "10 minutes" };
 const LINK_CHECK_JOBS = 400;
 const LINK_CHECK_BATCH = 40;
 const CLASSIFY_STEPS = 25;
@@ -31,6 +36,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
     const db = drizzle(this.env.DB);
     const fetcher = fetch.bind(globalThis);
     const ai = aiBinding(this.env.AI);
+    const browser = browserBinding(this.env.BROWSER);
     const trigger = event.payload?.trigger ?? "schedule";
 
     const runId = await step.do("start", () => startRun(db, trigger, event.instanceId));
@@ -48,9 +54,19 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
     }
 
     const discovered = { n: 0 };
+    // Browser ms / AI tokens are per-step deltas inside each step result —
+    // a cumulative counter read later would be wrong after Workflow replay.
+    let discoverBrowserMs = 0;
+    let discoverAiTokens = 0;
     for (let n = 0; n < DISCOVER_STEPS; n++) {
-      const res = await step.do(`discover:${n + 1}`, () => discoverStep(db, fetcher));
+      const res = await step.do(`discover:${n + 1}`, async () => {
+        const before = browser.msUsed;
+        const out = await discoverStep(db, { fetcher, browser, ai });
+        return { ...out, browserMs: browser.msUsed - before };
+      });
       discovered.n += res.found;
+      discoverBrowserMs += res.browserMs;
+      discoverAiTokens += res.aiInputTokens;
       if (res.probed < 15) break;
     }
 
@@ -68,21 +84,32 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
       rejected: 0,
       review: 0,
       discovered: discovered.n,
-      aiInputTokens: 0,
+      aiInputTokens: discoverAiTokens,
+      aiOutputTokens: 0,
+      browserMs: discoverBrowserMs,
     };
     let anyFailed = false;
     const ingested: string[] = [];
 
     for (const sourceId of sourceIds) {
       try {
-        const counts = (await step.do(`ingest:${sourceId}`, RETRY, () =>
-          ingestSource(db, runId, sourceId, fetcher),
-        )) as SourceCounts;
+        const counts = (await step.do(`ingest:${sourceId}`, INGEST_STEP, async () => {
+          const before = browser.msUsed;
+          const ctx: AdapterCtx = { fetcher, browser, ai, aiTokens: { n: 0 } };
+          const out = await ingestSource(db, runId, sourceId, ctx);
+          return {
+            ...out,
+            browserMs: browser.msUsed - before,
+            aiInputTokens: ctx.aiTokens?.n ?? 0,
+          };
+        })) as SourceCounts & { browserMs: number; aiInputTokens: number };
         totals.fetched += counts.fetched;
         totals.inserted += counts.inserted;
         totals.updated += counts.updated;
         totals.reactivated += counts.reactivated;
         totals.retired += counts.retired;
+        totals.browserMs += counts.browserMs;
+        totals.aiInputTokens += counts.aiInputTokens;
         ingested.push(sourceId);
       } catch (error) {
         anyFailed = true;
@@ -119,15 +146,19 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
     );
     const slices = Math.ceil(linkCheckIds.length / LINK_CHECK_BATCH);
     for (let n = 0; n < slices; n++) {
-      const res = await step.do(`linkcheck:${n + 1}`, () =>
-        linkCheckSlice(
+      const res = await step.do(`linkcheck:${n + 1}`, async () => {
+        const before = browser.msUsed;
+        const out = await linkCheckSlice(
           db,
           fetcher,
           ai,
           linkCheckIds.slice(n * LINK_CHECK_BATCH, (n + 1) * LINK_CHECK_BATCH),
-        ),
-      );
+          browser,
+        );
+        return { ...out, browserMs: browser.msUsed - before };
+      });
       totals.retired += res.linkDead + res.closedPage;
+      totals.browserMs += res.browserMs;
       if (res.breakerTripped) {
         breakerNotes.push(`closed_page breaker tripped on slice ${n + 1}`);
       }

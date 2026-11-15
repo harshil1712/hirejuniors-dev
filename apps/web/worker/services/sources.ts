@@ -1,6 +1,6 @@
 import { and, asc, eq, ne, sql, type SQL } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { adapterFor, type SourceRow } from "@hirejuniors/jobs/platforms";
+import { adapterFor, normaliseListingUrl, type SourceRow } from "@hirejuniors/jobs/platforms";
 import { classifyLevel, isExcluded } from "@hirejuniors/jobs/classify";
 import { parseLocation } from "@hirejuniors/jobs/location";
 import { company, job, source } from "../../schema/db";
@@ -103,6 +103,23 @@ export async function create(db: Db, input: SourceCreate): Promise<Source> {
     .where(eq(company.id, input.companyId))
     .get();
   if (!parent) throw new ServiceError("not_found", `No such company: ${input.companyId}`);
+  if (input.platform === "careers_page") {
+    // board = normalised listing URL; config defaults to {"listingUrl": board}.
+    try {
+      input = {
+        ...input,
+        board: normaliseListingUrl(input.board),
+        config:
+          input.config.trim() === "{}"
+            ? JSON.stringify({ listingUrl: normaliseListingUrl(input.board) })
+            : input.config,
+      };
+    } catch {
+      throw new ServiceError("validation_failed", "careers_page board must be a URL", [
+        { path: "board", message: "must be a valid listing URL" },
+      ]);
+    }
+  }
   validateConfig(input.platform, input.config);
   await ensureBoardFree(db, input.platform, input.board);
   const now = new Date();
@@ -187,11 +204,21 @@ export async function preview(
   input: SourcePreview,
   fetcher: typeof fetch,
 ): Promise<SourcePreviewResult["data"]> {
+  if (input.platform === "careers_page") {
+    input = {
+      ...input,
+      board: normaliseListingUrl(input.board),
+      config:
+        input.config.trim() === "{}"
+          ? JSON.stringify({ listingUrl: normaliseListingUrl(input.board) })
+          : input.config,
+    };
+  }
   validateConfig(input.platform, input.config);
   const src = previewSourceRow(input);
   let listings;
   try {
-    listings = await adapterFor(input.platform).fetchListings(fetcher, src);
+    listings = await adapterFor(input.platform).fetchListings({ fetcher }, src);
   } catch (e) {
     const message = e instanceof Error ? e.message : "fetch failed";
     throw new ServiceError("upstream_failed", `Upstream fetch failed: ${message}`);

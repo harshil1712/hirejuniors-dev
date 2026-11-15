@@ -44,6 +44,39 @@ export function decodeEntities(html: string): string {
   });
 }
 
+/** Escape all HTML special characters — nothing raw passes through. */
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Minimal Markdown → HTML for careers-page job descriptions (spec §Careers).
+ * Blank-line-separated blocks → <p>; consecutive `- `/`* ` lines → <ul><li>;
+ * lines starting `#`… → <h3>. Everything is HTML-escaped, so raw markup in
+ * the markdown is inert text. */
+export function markdownToHtml(md: string): string {
+  const blocks = md.replace(/\r\n/g, "\n").split(/\n{2,}/);
+  const out: string[] = [];
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trimEnd());
+    if (lines.every((l) => l.trim() === "")) continue;
+    const trimmed = lines.map((l) => l.trim());
+    if (trimmed.every((l) => /^[-*] /.test(l))) {
+      out.push(`<ul>${trimmed.map((l) => `<li>${escapeHtml(l.slice(2))}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (trimmed.length === 1 && trimmed[0].startsWith("#")) {
+      out.push(`<h3>${escapeHtml(trimmed[0].replace(/^#+\s*/, ""))}</h3>`);
+      continue;
+    }
+    out.push(`<p>${escapeHtml(trimmed.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+
 /** Plain text for `description_text` — strip tags, decode, collapse, cap. */
 export function htmlToText(html: string, max = 500): string {
   const text = decodeEntities(html)

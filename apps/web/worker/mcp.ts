@@ -329,8 +329,14 @@ export function createServer(principal: Principal, db: Db) {
   );
 
   const sourceFields = z.object({
-    platform: SourcePlatform.describe("one of greenhouse | lever | ashby | amazon_jobs"),
-    board: z.string().describe("Board token / site / board name ('amazon' for amazon_jobs)"),
+    platform: SourcePlatform.describe(
+      "one of greenhouse | lever | ashby | amazon_jobs | careers_page",
+    ),
+    board: z
+      .string()
+      .describe(
+        "Board token / site / board name ('amazon' for amazon_jobs; a listing URL for careers_page)",
+      ),
     config: z
       .string()
       .default("{}")

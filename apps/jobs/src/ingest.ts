@@ -1,6 +1,6 @@
 // Per-source ingest: fetch → shrink guard → pre-filter → upsert → feed diff.
 // Spec: docs/specs/ingest.md §Feed diff and §Change detection.
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { nanoid } from "nanoid";
 import { ingestRun, job, source, sourceRun } from "@hirejuniors/db/schema";
@@ -8,7 +8,7 @@ import { chunks, markSourceResult, sourceWithCompany, type Db } from "@hirejunio
 import { isExcluded } from "./classify";
 import { htmlToText } from "./html";
 import { parseLocation } from "./location";
-import { adapterFor, type Fetcher, type RawListing } from "./platforms";
+import { adapterFor, type AdapterCtx, type RawListing } from "./platforms";
 import { jobSlug } from "./slug";
 
 export type { Db } from "@hirejuniors/db/queries";
@@ -89,6 +89,20 @@ export async function upsertListings(
     counts.kept++;
     seen.add(l.externalId);
 
+    const prev = byExternal.get(l.externalId);
+    if (prev && l.reSeen) {
+      // careers_page re-seen link — stamp only; stored fields/contentHash
+      // stand (no page was fetched).
+      counts.updated++;
+      statements.push(
+        db
+          .update(job)
+          .set({ lastSeenAt: now, missedRuns: 0, updatedAt: now })
+          .where(eq(job.id, prev.id)),
+      );
+      continue;
+    }
+
     const loc = parseLocation(l.locationRaw, l.countryHint, l.workplaceHint);
     const hash = await contentHash(l);
     const fields = {
@@ -110,7 +124,6 @@ export async function upsertListings(
       updatedAt: now,
     };
 
-    const prev = byExternal.get(l.externalId);
     if (!prev) {
       counts.inserted++;
       statements.push(
@@ -224,12 +237,28 @@ export async function ingestSource(
   db: Db,
   runId: string,
   sourceId: string,
-  fetcher: Fetcher,
+  ctx: AdapterCtx,
 ): Promise<SourceCounts> {
   const startedAt = new Date();
   const row = await sourceWithCompany(db, sourceId);
   if (!row) throw new Error(`source ${sourceId} not found`);
-  const listings = await adapterFor(row.source.platform).fetchListings(fetcher, row.source);
+  if (row.source.platform === "careers_page") {
+    // The adapter re-sees stored links without fetching their pages and
+    // caps new page fetches at 30/run (spec §Careers-page ingest). Retired
+    // rows are excluded unless manually retired — a reappearing link must
+    // reactivate through the normal upsert path.
+    const stored = await db
+      .select({ externalId: job.externalId })
+      .from(job)
+      .where(
+        and(
+          eq(job.sourceId, sourceId),
+          or(ne(job.status, "retired"), eq(job.retireReason, "manual")),
+        ),
+      );
+    ctx.knownExternalIds = new Set(stored.map((j) => j.externalId));
+  }
+  const listings = await adapterFor(row.source.platform).fetchListings(ctx, row.source);
 
   // Shrink guard — runs before upsert so a bad feed can't retire anything.
   const last = row.source.lastFetched;
