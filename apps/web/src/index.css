@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "@hirejuniors/brand/tokens.css";
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@source "../node_modules/@fontsource-variable/schibsted-grotesk/files/*";
+@source "../node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/*";
+@source "../node_modules/@fontsource-variable/martian-mono/files/*";
+@source "../../../packages/brand/**/*.{ts,tsx}";
+
+/* ---------------------------------------------------------------------------
+   Kumo overrides — the ONLY element-scoped Kumo patches in the app.
+   Everything else is done at token level in @hirejuniors/brand/tokens.css.
+   --------------------------------------------------------------------------- */
+
+/* 1. Primary (emphasis) Button / LinkButton → flat brand, AA text.
+   Kumo 2.15 writes --kumo-button-emphasis-{bg,gradient-start,gradient-end,ring}
+   as an INLINE style on every primary/destructive button, derived from
+   --color-kumo-brand mixed with 15–30% white (a gradient whose top stop fails
+   AA with white text), and forces `!text-white`. No token feeds the mix
+   ratio, so there is no token-level path. We:
+   - match primaries only: their inline style references var(--color-kumo-brand)
+     (destructive references --color-kumo-danger and is left to Kumo);
+   - beat the inline style with author !important on the custom properties;
+   - set `color` inside @layer base: an !important in an EARLIER layer beats
+     Tailwind's `!text-white` (@layer utilities), unlike unlayered !important.
+   Result (design A, ink brand): light #fff on #172036 (16.20:1), hover
+           #fff on #25345a (12.23:1); dark #0e1424 on #e9edf6 (15.65:1),
+           hover #0e1424 on #cdd6e6 (12.55:1). */
+:is(
+  [data-kumo-component="Button"],
+  [data-kumo-component="LinkButton"]
+)[style*="--color-kumo-brand"] {
+  --kumo-button-emphasis-bg: var(--color-kumo-brand) !important;
+  --kumo-button-emphasis-gradient-start: var(--color-kumo-brand) !important;
+  --kumo-button-emphasis-gradient-end: var(--color-kumo-brand) !important;
+  --kumo-button-emphasis-ring: var(--color-kumo-brand-hover) !important;
+}
+:is(
+    [data-kumo-component="Button"],
+    [data-kumo-component="LinkButton"]
+  )[style*="--color-kumo-brand"]:not(:disabled):hover {
+  --kumo-button-emphasis-bg: var(--color-kumo-brand-hover) !important;
+  --kumo-button-emphasis-gradient-end: var(--color-kumo-brand-hover) !important;
+}
+@layer base {
+  :is(
+    [data-kumo-component="Button"],
+    [data-kumo-component="LinkButton"]
+  )[style*="--color-kumo-brand"] {
+    color: var(--brand-ink) !important;
+  }
+}
+
+/* 1b. Destructive Button → same treatment with --color-kumo-danger.
+   Light #fff on #b3261e (6.54:1); dark #121212 on #ff8f88 (8.51:1). */
+:is(
+  [data-kumo-component="Button"],
+  [data-kumo-component="LinkButton"]
+)[style*="--color-kumo-danger"] {
+  --kumo-button-emphasis-bg: var(--color-kumo-danger) !important;
+  --kumo-button-emphasis-gradient-start: var(--color-kumo-danger) !important;
+  --kumo-button-emphasis-gradient-end: var(--color-kumo-danger) !important;
+  --kumo-button-emphasis-ring: var(--color-kumo-danger) !important;
+}
+:is(
+    [data-kumo-component="Button"],
+    [data-kumo-component="LinkButton"]
+  )[style*="--color-kumo-danger"]:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+@layer base {
+  :is(
+    [data-kumo-component="Button"],
+    [data-kumo-component="LinkButton"]
+  )[style*="--color-kumo-danger"] {
+    color: light-dark(#fff, #121212) !important;
+  }
+}
+
+/* 2. Form-control boundaries: Kumo rings inputs with --color-kumo-line (a
+   decorative hairline, ~1.2:1). Re-point it on controls only so the border
+   meets WCAG 1.4.11 (≥3:1) on canvas/elevated/recessed in both modes.
+   `.kumo-input-placeholder` is on every inputVariants() control (Input,
+   InputGroup, SensitiveInput, Combobox, Autocomplete). */
+.kumo-input-placeholder,
+[data-kumo-component="Select"][data-kumo-part="trigger"] {
+  --color-kumo-line: var(--color-kumo-control-line);
+}
+
+/* 3. Link variant="plain" hovers to 70% opacity (fails AA); use the
+   darker/lighter brand text instead. */
+.hover\:text-kumo-link\/70:hover {
+  color: var(--brand-text-hover);
+}
+
+/* admin: keep the actions column reachable at <640px */
+.admin-scroll th:last-child,
+.admin-scroll td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--color-kumo-elevated);
+  box-shadow: -8px 0 8px -8px rgba(0, 0, 0, 0.25);
+}
+@media (max-width: 639px) {
+  .admin-scroll td:last-child::before {
+    content: "";
+  }
+}
+
+/* 4. Design A typography: all headings render in Schibsted Grotesk
+   (--font-display from tokens.css); mono utility stays Martian Mono. */
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}

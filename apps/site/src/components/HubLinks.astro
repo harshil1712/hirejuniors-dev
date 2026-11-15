@@ -1,0 +1,28 @@
+---
+import { levelSlug, levelLabel, LEVELS } from "../lib/levels";
+import { countrySlug, countryName } from "../lib/countries";
+
+const { levelCounts = {}, countryCounts = [], maxCountries = 8 } = Astro.props as {
+  levelCounts?: Record<string, number>;
+  countryCounts?: { code: string; n: number }[];
+  maxCountries?: number;
+};
+const countries = countryCounts.slice(0, maxCountries);
+---
+<nav class="hubs" aria-label="Job hubs">
+  {LEVELS.map((l) => (
+    <a href={`/jobs/${levelSlug(l)}/`}>
+      {levelLabel(l)}{levelCounts[l] ? <span class="n">{levelCounts[l]}</span> : null}
+    </a>
+  ))}
+  {countries.map((c) => (
+    <a href={`/jobs/in/${countrySlug(c.code)}/`}>
+      {countryName(c.code)}<span class="n">{c.n}</span>
+    </a>
+  ))}
+</nav>
+<style>
+  .hubs { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 15px; font-weight: 500; }
+  a { color: var(--color-kumo-default); border-radius: 4px; }
+  .n { font-family: var(--font-mono); font-size: 12px; color: var(--color-kumo-subtle); margin-left: 4px; }
+</style>

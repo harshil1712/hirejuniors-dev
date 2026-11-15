@@ -1,0 +1,120 @@
+@import "@fontsource-variable/schibsted-grotesk";
+@import "@fontsource-variable/atkinson-hyperlegible-next";
+@import "@fontsource-variable/martian-mono";
+
+/* Hire Juniors brand tokens — design A "Notice board" (paper, navy ink,
+   marker yellow). Shared by apps/web (over Kumo) and apps/site.
+   Every colour is ONE light-dark() declaration; the mode comes from
+   `color-scheme`, which html[data-mode] pins (see theme.ts).
+   Declared unlayered on :root so it beats Kumo's `@layer base` / `@theme`
+   defaults (incl. its :root[data-mode="dark"] block) without !important.
+   Contrast ratios (WCAG 2.x) are listed in DESIGN.md → "Contrast". */
+:root {
+  --font-display: "Schibsted Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Martian Mono Variable", ui-monospace, monospace;
+
+  /* ---- surfaces (navy scale) ---- */
+  --color-kumo-canvas: light-dark(#f4f6fa, #0e1424); /* paper */
+  --color-kumo-elevated: light-dark(#ffffff, #151d31); /* card */
+  --color-kumo-recessed: light-dark(#eaedf3, #1a2339);
+  --color-kumo-line: light-dark(#d5dae5, #26304a); /* rule */
+  --color-kumo-default: light-dark(#172036, #e9edf6); /* ink */
+  --color-kumo-subtle: light-dark(#5a6377, #9aa3b8);
+
+  /* Kumo neutral surfaces, derived from the navy scale */
+  --color-kumo-base: light-dark(#ffffff, #151d31); /* cards, popovers, dialogs, table th */
+  --color-kumo-control: light-dark(#ffffff, #1a2339); /* inputs, select trigger, menus */
+  --color-kumo-overlay: light-dark(#eaedf3, #223052); /* disabled fields, chips */
+  --color-kumo-tint: light-dark(#e9edf4, #223052); /* hover / highlighted rows+items */
+  --color-kumo-fill: light-dark(#d5dae5, #26304a); /* th rule, card rings */
+  --color-kumo-fill-hover: light-dark(#e4e9f2, #314061);
+  --color-kumo-hairline: light-dark(#dde2ec, #1e2942);
+  --color-kumo-interact: light-dark(#c3cad9, #3a4a70);
+  --color-kumo-contrast: light-dark(#172036, #e9edf6);
+  --color-kumo-focus: light-dark(#172036, #e9edf6); /* 2px ink outline, 2px offset */
+  /* form-control boundary: ≥3:1 vs canvas/elevated/recessed both modes (WCAG 1.4.11) */
+  --color-kumo-control-line: light-dark(#6e7894, #8f9ab5);
+
+  /* ---- brand = ink: ink-filled primary buttons with paper text ---- */
+  --color-kumo-brand: light-dark(#172036, #e9edf6);
+  /* hover: one step lighter in light, darker in dark — --brand-ink stays AA */
+  --color-kumo-brand-hover: light-dark(#25345a, #cdd6e6);
+  --brand-text: light-dark(#172036, #e9edf6); /* links are ink + underline */
+  --brand-text-hover: light-dark(#25345a, #cdd6e6);
+  --brand-lite: light-dark(#8f9ab5, #3a4a70);
+  --brand-tint: light-dark(#e4e9f4, #1f2a46);
+  --brand-ink: light-dark(#ffffff, #0e1424); /* text on --color-kumo-brand */
+  --marker: light-dark(#ffe14d, #ffe14d); /* highlight — sparing, see DESIGN.md */
+  --marker-ink: light-dark(#172036, #172036); /* anything ON the marker, both modes */
+  --color-kumo-danger: light-dark(#b3261e, #ff8f88);
+
+  /* ---- Kumo text namespace (text-kumo-* utilities read these) ---- */
+  --text-color-kumo-default: var(--color-kumo-default);
+  --text-color-kumo-strong: light-dark(#0d1428, #ffffff);
+  --text-color-kumo-subtle: var(--color-kumo-subtle);
+  --text-color-kumo-placeholder: light-dark(#6c758b, #8590aa);
+  --text-color-kumo-inactive: light-dark(#a9b1c4, #5a6478); /* disabled only — exempt from AA */
+  --text-color-kumo-inverse: light-dark(#e9edf6, #172036);
+  --text-color-kumo-brand: var(--brand-text);
+  --text-color-kumo-link: var(--brand-text);
+
+  /* ---- status (Badge tints; consumed by site .bg.* and app badges) ---- */
+  --status-active-bg: light-dark(#e0f2e9, #12291f);
+  --status-active-fg: light-dark(#18794e, #5fd49a);
+  --status-paused-bg: light-dark(#eaedf3, #1a2339);
+  --status-paused-fg: light-dark(#5a6377, #9aa3b8);
+  --status-archived-bg: light-dark(#fbe3e3, #33181f);
+  --status-archived-fg: light-dark(#b3261e, #ff8f88);
+
+  color-scheme: light dark;
+}
+html[data-mode="light"] {
+  color-scheme: light;
+}
+html[data-mode="dark"] {
+  color-scheme: dark;
+}
+body {
+  font-family: var(--font-sans);
+}
+/* Display = Schibsted Grotesk, tighter tracking (headings, logo, big numbers). */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+/* marker highlight — logo "juniors", the hero word, the tear strip, ::selection */
+.marker {
+  color: var(--marker-ink);
+  /* dark mode: the transparent gradient slivers would leave marker-ink text
+     on navy canvas (≈1.1:1) — solidify the band so ink is always on yellow */
+
+  background: linear-gradient(
+    transparent 18%,
+    var(--marker) 18%,
+    var(--marker) 88%,
+    transparent 88%
+  );
+  padding: 0 3px;
+  border-radius: 2px;
+}
+::selection {
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+/* app parity: selection + scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-kumo-line) transparent;
+}
+/* focus: 2px ink outline with 2px offset everywhere */
+:focus-visible {
+  outline: 2px solid var(--color-kumo-default);
+  outline-offset: 2px;
+}
+
+html[data-mode="dark"] .marker {
+  background: var(--marker);
+  border-radius: 2px;
+  padding: 0 3px;
+}

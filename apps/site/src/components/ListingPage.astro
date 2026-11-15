@@ -1,0 +1,45 @@
+---
+// Shared body for every jobs listing page: heading, count line, list, pager.
+import JobList from "./JobList.astro";
+
+interface Item {
+  slug: string; title: string; companyName: string; level: string;
+  locationRaw: string; applyUrl?: string | null;
+  postedAt: Date | null; firstSeenAt: Date;
+}
+const {
+  heading, jobs, total, page, pageCount, basePath, empty,
+} = Astro.props as {
+  heading: string;
+  jobs: Item[];
+  total: number;
+  page: number;
+  pageCount: number;
+  basePath: string;
+  empty?: string;
+};
+const pageUrl = (n: number) => (n <= 1 ? basePath : `${basePath}?page=${n}`);
+---
+<h1 class="font-display">{heading}</h1>
+<p class="count">{total} open {total === 1 ? "role" : "roles"}</p>
+<JobList jobs={jobs} empty={empty ?? "Check back after the next refresh."} />
+{pageCount > 1 && (
+  <nav class="pager" aria-label="Pagination">
+    {page > 1 && <a class="btn btn-secondary" href={pageUrl(page - 1)}>← Newer</a>}
+    <span>Page {page} of {pageCount}</span>
+    {page < pageCount && <a class="btn btn-secondary" href={pageUrl(page + 1)}>Older →</a>}
+  </nav>
+)}
+<style>
+  h1 { font-size: 34px; padding-top: 40px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+    margin: 0 0 20px;
+  }
+  @media (max-width: 600px) { h1 { padding-top: 24px; } }
+  .pager { display: flex; gap: 16px; align-items: center; margin-top: 24px; font-size: 14px; color: var(--color-kumo-subtle); }
+</style>

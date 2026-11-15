@@ -1,0 +1,69 @@
+---
+export const prerender = false;
+import PageLayout from "../../../components/PageLayout.astro";
+import ListingPage from "../../../components/ListingPage.astro";
+import HubLinks from "../../../components/HubLinks.astro";
+import { siteDb } from "../../../lib/site-db";
+import { listActiveJobs, countActiveJobs, countryCounts } from "@hirejuniors/db/queries";
+import { levelFromSlug, levelSlug, levelLabel, levelLabelLower } from "../../../lib/levels";
+import { countryName } from "../../../lib/countries";
+import { breadcrumbs, itemList, cacheHeaders, CACHE_OK, CACHE_GONE, NOINDEX } from "../../../lib/ssr";
+import { PROJECT } from "#project";
+
+const PER = 24;
+const origin = `https://${PROJECT.domain}`;
+const level = levelFromSlug(Astro.params.level ?? "");
+if (!level) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+const page = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10) || 1);
+
+const db = siteDb();
+const total = await countActiveJobs(db, { level });
+const pageCount = Math.max(1, Math.ceil(total / PER));
+if (page > pageCount) {
+  return new Response("Not found", { status: 404, headers: { "cache-control": CACHE_GONE } });
+}
+cacheHeaders(Astro, CACHE_OK);
+const jobs = await listActiveJobs(db, { level }, { offset: (page - 1) * PER, limit: PER });
+const cts = (await countryCounts(db))
+  .filter((c) => c.countryCode)
+  .map((c) => ({ code: c.countryCode as string, n: c.n }));
+
+// Zero-job hub: 200 + empty state + noindex (spec).
+const emptyHub = total === 0;
+const label = levelLabelLower(level);
+const title = emptyHub
+  ? `${levelLabel(level)} · ${PROJECT.productName}`
+  : `${total} ${label} open now · ${PROJECT.productName}`;
+const description = emptyHub
+  ? `No open ${label} right now — the board is refreshed weekly.`
+  : `${total} open ${label}, collected from company job boards and refreshed weekly.`;
+---
+<PageLayout
+  title={title}
+  description={description}
+  canonical={`${origin}/jobs/${levelSlug(level)}/`}
+  robots={emptyHub ? NOINDEX : undefined}
+  width="wide"
+  jsonLdEntities={[
+    breadcrumbs([
+      { name: "Home", path: "/" },
+      { name: "Jobs", path: "/jobs/" },
+      { name: levelLabel(level), path: `/jobs/${levelSlug(level)}/` },
+    ], origin),
+    itemList(jobs, origin),
+  ]}
+>
+  <ListingPage heading={levelLabel(level)} jobs={jobs} total={total} page={page}
+    pageCount={pageCount} basePath={`/jobs/${levelSlug(level)}/`}
+    empty={`No open ${label} right now — check back after the next weekly refresh.`} />
+  <section class="more-hubs">
+    <h2 class="font-display">By country</h2>
+    <HubLinks countryCounts={cts} maxCountries={16} />
+  </section>
+</PageLayout>
+<style>
+  .more-hubs { margin-top: 40px; }
+  h2 { font-size: 20px; margin: 0 0 12px; }
+</style>

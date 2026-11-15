@@ -1,0 +1,91 @@
+---
+export const prerender = false;
+import PageLayout from "../../components/PageLayout.astro";
+import ListingPage from "../../components/ListingPage.astro";
+import { siteDb } from "../../lib/site-db";
+import { listActiveJobs, countActiveJobs } from "@hirejuniors/db/queries";
+import { levelFromSlug, levelSlug, levelLabel } from "../../lib/levels";
+import { countryCodeFromSlug, countrySlug, countryName } from "../../lib/countries";
+import { breadcrumbs, itemList, cacheHeaders, CACHE_OK, CACHE_GONE, NOINDEX } from "../../lib/ssr";
+import { PROJECT } from "#project";
+
+const PER = 24;
+const origin = `https://${PROJECT.domain}`;
+const url = Astro.url;
+const params = url.searchParams;
+
+const page = Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1);
+const q = params.get("q")?.trim() || undefined;
+// ?level / ?country accept the public slugs AND raw codes.
+const levelParam = params.get("level")?.trim();
+const countryParam = params.get("country")?.trim();
+const level = levelParam
+  ? (levelFromSlug(levelParam) ?? (["internship", "apprenticeship", "graduate", "junior"].includes(levelParam) ? levelParam as never : null))
+  : undefined;
+const countryCode = countryParam
+  ? (/^[A-Za-z]{2}$/.test(countryParam) ? countryParam.toUpperCase() : countryCodeFromSlug(countryParam))
+  : undefined;
+
+const filtered = !!(q || levelParam || countryParam);
+
+// canonicalization: filters map onto the matching hub, else /jobs/.
+let canonical = `${origin}/jobs/`;
+let hubPath = "/jobs/";
+if (level && countryCode) hubPath = `/jobs/${levelSlug(level)}/in/${countrySlug(countryCode)}/`;
+else if (level) hubPath = `/jobs/${levelSlug(level)}/`;
+else if (countryCode) hubPath = `/jobs/in/${countrySlug(countryCode)}/`;
+if (filtered) canonical = `${origin}${hubPath}`;
+if (page > 1) canonical = `${origin}/jobs/?page=${page}`; // self-canonical
+
+const db = siteDb();
+const f = { level: level ?? undefined, countryCode: countryCode ?? undefined, q };
+const total = await countActiveJobs(db, f);
+const pageCount = Math.max(1, Math.ceil(total / PER));
+
+if (page > pageCount) {
+  return new Response("Not found", {
+    status: 404,
+    headers: { "cache-control": CACHE_GONE },
+  });
+}
+cacheHeaders(Astro, CACHE_OK);
+const jobs = await listActiveJobs(db, f, { offset: (page - 1) * PER, limit: PER });
+
+const title = total
+  ? `Junior jobs and internships — ${total} open roles · ${PROJECT.productName}`
+  : `Junior jobs and internships · ${PROJECT.productName}`;
+const description = `Browse ${total} open junior jobs, internships, apprenticeships and graduate roles — collected from company job boards and refreshed weekly.`;
+---
+<PageLayout
+  title={title}
+  description={description}
+  canonical={canonical}
+  robots={filtered ? NOINDEX : undefined}
+  width="wide"
+  jsonLdEntities={[
+    breadcrumbs([{ name: "Home", path: "/" }, { name: "Jobs", path: "/jobs/" }], origin),
+    itemList(jobs, origin),
+  ]}
+>
+  <form class="filters" method="get" action="/jobs/">
+    <input type="search" name="q" value={q ?? ""} placeholder="Search titles" aria-label="Search titles" />
+    <select name="level" aria-label="Level">
+      <option value="">All levels</option>
+      <option value="internships" selected={level === "internship"}>Internships</option>
+      <option value="apprenticeships" selected={level === "apprenticeship"}>Apprenticeships</option>
+      <option value="graduate" selected={level === "graduate"}>Graduate</option>
+      <option value="junior" selected={level === "junior"}>Junior</option>
+    </select>
+    <input name="country" value={countryParam ?? ""} placeholder="Country" aria-label="Country" />
+    <button class="btn btn-secondary" type="submit">Filter</button>
+  </form>
+  <ListingPage heading="All roles" jobs={jobs} total={total} page={page} pageCount={pageCount} basePath="/jobs/" />
+</PageLayout>
+<style>
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 40px 0 8px; }
+  @media (max-width: 600px) { .filters { margin-top: 24px; } }
+  input, select {
+    padding: 8px 12px; border: 1px solid var(--color-kumo-line); border-radius: 8px;
+    background: var(--color-kumo-base); color: var(--color-kumo-default); font-size: 14px;
+  }
+</style>

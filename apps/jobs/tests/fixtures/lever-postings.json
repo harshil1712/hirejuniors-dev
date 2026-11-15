@@ -1,0 +1,33 @@
+[
+  {
+    "id": "a1b2c3d4-0001-4000-8000-leverjob0001",
+    "text": "Software Engineer, New Grad",
+    "hostedUrl": "https://jobs.lever.co/example/a1b2c3d4",
+    "applyUrl": "https://jobs.lever.co/example/a1b2c3d4/apply",
+    "categories": {
+      "commitment": "Full-time",
+      "location": "San Francisco, CA",
+      "team": "Engineering",
+      "department": "University"
+    },
+    "workplaceType": "hybrid",
+    "country": "US",
+    "description": "<p>Join our platform team.</p>",
+    "descriptionPlain": "Join our platform team.",
+    "lists": [{ "text": "Requirements", "content": "<ul><li>Degree in CS</li></ul>" }],
+    "createdAt": 1763000000000,
+    "updatedAt": 1763100000000
+  },
+  {
+    "id": "a1b2c3d4-0002-4000-8000-leverjob0002",
+    "text": "Data Analyst Intern",
+    "hostedUrl": "https://jobs.lever.co/example/a1b2c3d4-intern",
+    "categories": {
+      "commitment": "Intern",
+      "location": "Remote",
+      "team": "Data"
+    },
+    "workplaceType": "remote",
+    "createdAt": 1762900000000
+  }
+]

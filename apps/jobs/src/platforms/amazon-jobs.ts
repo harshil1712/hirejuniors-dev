@@ -1,0 +1,63 @@
+import { z } from "zod";
+import { decodeEntities } from "../html";
+import { normalizeEmploymentType } from "./normalize";
+import { parseJobList } from "./tolerant";
+import type { PlatformAdapter, RawListing } from "./types";
+
+const configSchema = z.object({
+  /** Query string for search.json (the student-programs search). */
+  query: z.string(),
+});
+
+const jobSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  title: z.string(),
+  city: z.string().nullish(),
+  country_code: z.string().nullish(),
+  description_short: z.string().nullish(),
+  job_schedule_type: z.string().nullish(),
+  posted_date: z.string().nullish(),
+  job_path: z.string(),
+  updated_time: z.string().nullish(),
+  description: z.string().nullish(),
+  basic_qualifications: z.string().nullish(),
+  preferred_qualifications: z.string().nullish(),
+});
+
+const envelopeSchema = z.object({ jobs: z.array(z.unknown()) });
+export type AmazonPayload = z.input<typeof envelopeSchema>;
+
+function parseDate(value: string | null | undefined): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+export const amazonJobs: PlatformAdapter<z.infer<typeof configSchema>, AmazonPayload> = {
+  configSchema,
+  parseConfig: (json) => configSchema.parse(JSON.parse(json)),
+  async fetchListings(ctx, src) {
+    const fetcher = ctx.fetcher;
+    const config = this.parseConfig(src.config);
+    const res = await fetcher(`https://www.amazon.jobs/en/search.json?${config.query}`);
+    if (!res.ok) throw new Error(`amazon.jobs ${res.status}`);
+    return this.toListings(await res.json(), src);
+  },
+  toListings(payload, _src): RawListing[] {
+    const { jobs } = envelopeSchema.parse(payload);
+    const parsed = parseJobList(jobs, jobSchema);
+    return parsed.map((j) => ({
+      externalId: String(j.id),
+      title: j.title,
+      applyUrl: `https://www.amazon.jobs${j.job_path}`,
+      locationRaw: [j.city, j.country_code].filter(Boolean).join(", "),
+      employmentTypeHint: normalizeEmploymentType(j.job_schedule_type),
+      countryHint: j.country_code ?? undefined,
+      descriptionHtml: decodeEntities(
+        j.description ?? j.description_short ?? j.basic_qualifications ?? "",
+      ),
+      postedAt: parseDate(j.posted_date),
+      updatedAt: parseDate(j.updated_time),
+    }));
+  },
+};

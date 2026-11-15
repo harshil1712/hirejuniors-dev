@@ -1,0 +1,21 @@
+{
+  "name": "hirejuniors-jobs-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "test-db",
+      "database_id": "test-db",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+  "workflows": [
+    {
+      "name": "ingest-test",
+      "binding": "INGEST_WORKFLOW",
+      "class_name": "IngestWorkflow",
+    },
+  ],
+}

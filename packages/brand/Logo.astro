@@ -1,0 +1,13 @@
+---
+// Design A wordmark/mark — same contract as Logo.tsx.
+interface Props { size?: number; wordmark?: boolean }
+const { size = 22, wordmark = false } = Astro.props;
+---
+{wordmark ? (
+  <span class="font-display" style={`font-weight:800;letter-spacing:-0.02em;font-size:${size}px;line-height:1`}>hire<span class="marker" style="margin-left:2px">juniors</span></span>
+) : (
+  <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <rect width="32" height="32" rx="7" fill="var(--marker)" />
+    <text x="16" y="22" text-anchor="middle" font-family="'Schibsted Grotesk Variable','Schibsted Grotesk',sans-serif" font-weight="800" font-size="17" letter-spacing="-0.5" fill="var(--marker-ink)">hj</text>
+  </svg>
+)}

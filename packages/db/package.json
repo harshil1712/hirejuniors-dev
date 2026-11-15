@@ -1,0 +1,13 @@
+{
+  "name": "@hirejuniors/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": "./src/schema.ts",
+    "./queries": "./src/queries.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4",
+    "nanoid": "6.0.2"
+  }
+}

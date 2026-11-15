@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "id": "9f8e7d6c-0001-4000-8000-ashbyjob00001",
+      "title": "Graduate Software Engineer",
+      "jobUrl": "https://jobs.ashbyhq.com/example/9f8e7d6c",
+      "location": "London, United Kingdom",
+      "employmentType": "FullTime",
+      "isRemote": false,
+      "workplaceType": "Hybrid",
+      "address": {
+        "postalAddress": { "addressCountry": "GB" }
+      },
+      "publishedAt": "2026-11-01T09:00:00Z",
+      "descriptionHtml": "<p>Early-career rotation programme.</p>"
+    },
+    {
+      "id": "9f8e7d6c-0002-4000-8000-ashbyjob00002",
+      "title": "Backend Engineer Intern",
+      "jobUrl": "https://jobs.ashbyhq.com/example/9f8e7d6c-intern",
+      "location": { "locationName": "Remote - Germany" },
+      "employmentType": "Intern",
+      "isRemote": true,
+      "publishedAt": "2026-10-20T09:00:00Z",
+      "descriptionPlain": "Six-month internship."
+    }
+  ]
+}

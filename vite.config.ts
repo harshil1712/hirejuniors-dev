@@ -1,34 +1,50 @@
-import autoprefixer from "autoprefixer";
-import tailwindcss from "tailwindcss";
-import tsconfigPaths from "vite-tsconfig-paths";
-import { reactRouter } from "@react-router/dev/vite";
-import { defineConfig } from "vite";
-import { cloudflare } from "@cloudflare/vite-plugin";
-
-// By default react-router's dev server uses Node.js, so we want to remove their server
-// configuration to use the dev server provided by Vite + Workerd.
-const reactRouterPlugins = reactRouter();
-const reactRouterPlugin = reactRouterPlugins.find(
-  (plugin) => plugin.name === "react-router",
-)!;
-reactRouterPlugin.configureServer = undefined;
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
-  css: {
-    postcss: {
-      plugins: [tailwindcss, autoprefixer],
+  fmt: {
+    ignorePatterns: [
+      "tooling/**",
+      ".devin/**",
+      ".agents/**",
+      ".claude/**",
+      "apps/site/.astro/**",
+      "apps/site/dist/**",
+      "**/routeTree.gen.ts",
+    ],
+  },
+  lint: {
+    ignorePatterns: [
+      "tooling/**",
+      ".devin/**",
+      ".agents/**",
+      ".claude/**",
+      "apps/site/.astro/**",
+      "apps/site/dist/**",
+      "**/routeTree.gen.ts",
+    ],
+    jsPlugins: [
+      { name: "vite-plus", specifier: "vite-plus/oxlint-plugin" },
+      { name: "anti-slop", specifier: "./tooling/anti-slop/index.ts" },
+    ],
+    rules: {
+      "vite-plus/prefer-vite-plus-imports": "error",
+      "anti-slop/no-array-filter-map": "error",
+      "anti-slop/no-reduce-accumulator-copy": "error",
+      "anti-slop/no-chained-type-assertions": "error",
+      "anti-slop/no-conditional-empty-object-spread": "error",
+      "anti-slop/no-known-value-widening": "error",
+      "anti-slop/no-module-mocking": "error",
+      "anti-slop/no-object-parameters": "error",
+      "anti-slop/no-reflect-apply": "error",
+      "anti-slop/no-reflect-get": "error",
+      "anti-slop/no-runtime-typeof": "error",
+      "anti-slop/no-shape-in-symbol-names": "error",
+      "anti-slop/no-unknown-parameters": "error",
+      "anti-slop/no-unknown-returns": "error",
+      "anti-slop/no-unknown-type-aliases": "error",
+      "anti-slop/no-unsafe-dictionary-type": "error",
+      "anti-slop/no-widen-then-assert": "error",
     },
-  },
-  plugins: [cloudflare(), reactRouterPlugins, tsconfigPaths()],
-  ssr: {
-    resolve: {
-      conditions: ["workerd", "worker", "browser"],
-    },
-  },
-  resolve: {
-    mainFields: ["browser", "module", "main"],
-  },
-  build: {
-    minify: true,
+    options: { typeAware: true, typeCheck: true },
   },
 });

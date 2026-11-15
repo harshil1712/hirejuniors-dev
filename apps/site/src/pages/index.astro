@@ -1,0 +1,180 @@
+---
+export const prerender = false;
+import PageLayout from "../components/PageLayout.astro";
+import JobList from "../components/JobList.astro";
+import HubLinks from "../components/HubLinks.astro";
+import { PROJECT } from "#project";
+import { siteDb } from "../lib/site-db";
+import {
+  listActiveJobs, countActiveJobs, levelCounts, countryCounts,
+} from "@hirejuniors/db/queries";
+import { breadcrumbs, itemList, cacheHeaders, CACHE_OK } from "../lib/ssr";
+
+cacheHeaders(Astro, CACHE_OK);
+const db = siteDb();
+const [total, jobs, levels, countries] = await Promise.all([
+  countActiveJobs(db),
+  listActiveJobs(db, {}, { limit: 12 }),
+  levelCounts(db),
+  countryCounts(db),
+]);
+const levelMap = Object.fromEntries(levels.map((r) => [r.level, r.n]));
+const countryList = countries
+  .filter((c) => c.countryCode)
+  .map((c) => ({ code: c.countryCode as string, n: c.n }));
+
+const description =
+  `Hire Juniors lists junior jobs, internships, apprenticeships and graduate roles, refreshed weekly. ${total} open roles right now.`;
+const FAQ = [
+  {
+    q: "What counts as a junior role?",
+    a: "Roles aimed at people starting out: internships, apprenticeships, graduate schemes and jobs that ask for roughly zero to two years of experience.",
+  },
+  {
+    q: "Where do the listings come from?",
+    a: "We read public job boards from companies directly — Greenhouse, Lever, Ashby and Amazon Jobs — no scraping of logged-in sites.",
+  },
+  {
+    q: "How often is the board updated?",
+    a: "The sources are re-read weekly. New postings appear after each run and closed ones are removed.",
+  },
+  {
+    q: "What happens when a role closes?",
+    a: "The listing is retired: it leaves every list, and its page answers 410 Gone with a short note and links to similar open roles.",
+  },
+];
+const jsonLd = [
+  {
+    "@type": "FAQPage",
+    mainEntity: FAQ.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  },
+];
+---
+<PageLayout
+  title={`${PROJECT.productName} — junior jobs and internships`}
+  description={description}
+  width="wide"
+  jsonLdEntities={jsonLd}
+>
+  <section class="hero">
+    <div class="hero-copy">
+      <h1>Your <span class="marker">first</span> tech job is on this board.</h1>
+      <p class="lede">
+        {total} internships, apprenticeships, graduate and junior roles,
+        collected from company job boards every Monday. Closed roles come down.
+      </p>
+    </div>
+    <div class="hero-side">
+      <form class="find" method="get" action="/jobs/" role="search">
+        <label for="hero-q">Role or company</label>
+        <div class="find-box">
+          <input id="hero-q" type="search" name="q" placeholder="e.g. frontend, Stripe" />
+          <button type="submit">Find roles</button>
+        </div>
+      </form>
+      <p class="kicker">Browse by level and country</p>
+      <HubLinks levelCounts={levelMap} countryCounts={countryList} />
+    </div>
+  </section>
+
+  <section class="latest-jobs">
+    <div class="sect">
+      <h2 class="font-display">Pinned this week</h2>
+      {jobs.length > 0 && <a href="/jobs/">All {total} roles →</a>}
+    </div>
+    <JobList jobs={jobs} as="h3" />
+  </section>
+
+  <section class="faq" aria-labelledby="faq-title">
+    <h2 class="font-display" id="faq-title">FAQ</h2>
+    {FAQ.map((f) => (
+      <details>
+        <summary>{f.q}</summary>
+        <p>{f.a}</p>
+      </details>
+    ))}
+  </section>
+
+</PageLayout>
+<style>
+  .hero {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 48px;
+    align-items: end;
+    padding: 72px 0 48px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(44px, 6vw, 68px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 0.98;
+    margin: 0 0 22px;
+  }
+  h1 .marker {
+    background: linear-gradient(transparent 12%, var(--marker) 12%, var(--marker) 92%, transparent 92%);
+    padding: 0 0.08em;
+  }
+  .lede { font-size: 19px; line-height: 1.5; color: var(--color-kumo-subtle); max-width: 34ch; margin: 0; }
+  .hero-side { display: grid; gap: 14px; justify-items: start; }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+    margin: 0;
+  }
+  .find { display: grid; gap: 8px; width: 100%; }
+  .find label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-kumo-subtle);
+  }
+  .find-box {
+    display: flex;
+    border: 1.5px solid var(--color-kumo-default);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-kumo-elevated);
+  }
+  .find-box input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--color-kumo-default);
+  }
+  .find-box input:focus { outline: none; }
+  .find-box:focus-within { outline: 2px solid var(--color-kumo-default); outline-offset: 2px; }
+  .find-box button {
+    border: 0;
+    background: var(--color-kumo-brand);
+    color: var(--brand-ink);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  section { margin-bottom: 48px; }
+  .sect { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .sect h2, .faq h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  .sect a { font-size: 14px; font-weight: 500; color: var(--color-kumo-default); }
+  .faq details { border-bottom: 1px solid var(--color-kumo-line); padding: 12px 0; }
+  .faq summary { cursor: pointer; font-weight: 700; font-family: var(--font-display); }
+  .faq details p { color: var(--color-kumo-subtle); margin-top: 8px; }
+  @media (max-width: 800px) {
+    .hero { grid-template-columns: 1fr; padding-top: 48px; }
+  }
+</style>

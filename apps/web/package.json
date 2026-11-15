@@ -1,0 +1,52 @@
+{
+  "name": "@hirejuniors/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "test": "vp test",
+    "prepare": "vp config",
+    "check": "vp check",
+    "format": "vp check --fix"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "2.15.0",
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource-variable/martian-mono": "^5.3.0",
+    "@fontsource-variable/schibsted-grotesk": "^5.3.0",
+    "@hirejuniors/brand": "workspace:*",
+    "@hirejuniors/db": "workspace:*",
+    "@hirejuniors/jobs": "workspace:*",
+    "@hono/zod-validator": "0.9.1",
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-router": "1.170.46",
+    "@vitejs/plugin-react": "6.1.2",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.13",
+    "nanoid": "6.0.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.65.0",
+    "@cloudflare/vitest-plugin": "1.4.7",
+    "@cloudflare/workers-types": "5.20261023.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@tanstack/router-plugin": "1.168.48",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "4.152.0"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "msgpackr-extract@3.0.4": true,
+    "workerd": true
+  }
+}

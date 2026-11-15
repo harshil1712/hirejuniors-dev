@@ -1,0 +1,17 @@
+{
+  "name": "hirejuniors-web-test",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "test-db",
+      "database_id": "test-db",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+  "vars": {
+    "OWNER_ADMIN_EMAIL": "owner@example.com",
+  },
+}

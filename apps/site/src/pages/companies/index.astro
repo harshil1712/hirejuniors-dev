@@ -1,0 +1,50 @@
+---
+export const prerender = false;
+import PageLayout from "../../components/PageLayout.astro";
+import { siteDb } from "../../lib/site-db";
+import { companiesWithActiveJobs } from "@hirejuniors/db/queries";
+import { breadcrumbs, cacheHeaders, CACHE_OK } from "../../lib/ssr";
+import { PROJECT } from "#project";
+
+const origin = `https://${PROJECT.domain}`;
+cacheHeaders(Astro, CACHE_OK);
+const rows = await companiesWithActiveJobs(siteDb());
+const title = `Companies hiring juniors · ${PROJECT.productName}`;
+const description = `${rows.length} companies with open junior jobs, internships, apprenticeships or graduate roles.`;
+---
+<PageLayout
+  title={title}
+  description={description}
+  canonical={`${origin}/companies/`}
+  width="wide"
+  jsonLdEntities={[
+    breadcrumbs([{ name: "Home", path: "/" }, { name: "Companies", path: "/companies/" }], origin),
+  ]}
+>
+  <h1 class="font-display">Companies hiring juniors</h1>
+  <p class="sub">{rows.length} companies with open roles right now.</p>
+  <ul class="clist">
+    {rows.map((r) => (
+      <li>
+        <a href={`/companies/${r.company.slug}/`}>
+          {r.company.logoUrl && <img src={r.company.logoUrl} alt="" width="20" height="20" loading="lazy" />}
+          <span class="n">{r.company.name}</span>
+          <span class="c">{r.activeCount} open</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</PageLayout>
+<style>
+  h1 { font-size: 34px; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .sub { color: var(--color-kumo-subtle); margin: 0 0 24px; }
+  .clist { list-style: none; margin: 0; padding: 0; }
+  .clist a {
+    display: flex; gap: 10px; align-items: center; padding: 12px 0;
+    border-bottom: 1px solid var(--color-kumo-line); text-decoration: none;
+    color: var(--color-kumo-default); border-radius: 6px;
+  }
+  .clist a:hover .n { color: var(--brand-text); }
+  .n { font-weight: 600; }
+  .c { margin-left: auto; color: var(--color-kumo-subtle); font-size: 13px; }
+</style>
