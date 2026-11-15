@@ -2,7 +2,7 @@
 // 25% closed-page circuit breaker.
 import { and, eq, inArray } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
-import { job } from "@hirejuniors/db/schema";
+import { job, source } from "@hirejuniors/db/schema";
 import { chunks, expirableJobs } from "@hirejuniors/db/queries";
 import type { Db } from "./ingest";
 import type { Fetcher } from "./platforms";
@@ -54,10 +54,13 @@ async function followRedirects(fetcher: Fetcher, url: string): Promise<Response>
 
 /**
  * One link-check slice (≤40 ids, selected up front by linkcheck:select).
- * 404/410 at any hop → link_dead. Final 2xx text/html → page check: under
- * 200 chars of text just stamps; otherwise clef-flash `open` ≤ 0.15 →
- * closed_page. If >25% of the slice would retire closed_page, none of that
- * slice's closed_page retirements apply (link_dead still applies).
+ * 404/410 at any hop → link_dead, for every platform. A final 2xx text/html
+ * is page-checked ONLY for careers_page jobs (the feed is authoritative for
+ * JSON platforms, so their 2xx just stamps): under 200 chars of text just
+ * stamps; otherwise clef-flash `open` ≤ 0.15 → closed_page. If >25% of the
+ * page-checked careers_page jobs in this slice would retire closed_page,
+ * none of that slice's closed_page retirements apply (link_dead still
+ * applies).
  */
 export async function linkCheckSlice(
   db: Db,
@@ -69,14 +72,23 @@ export async function linkCheckSlice(
   const result: SliceResult = { checked: 0, linkDead: 0, closedPage: 0, breakerTripped: false };
   if (ids.length === 0) return result;
   const rows = await db
-    .select({ id: job.id, applyUrl: job.applyUrl, title: job.title })
+    .select({
+      id: job.id,
+      applyUrl: job.applyUrl,
+      title: job.title,
+      platform: source.platform,
+    })
     .from(job)
+    .innerJoin(source, eq(job.sourceId, source.id))
     .where(and(inArray(job.id, ids), eq(job.status, "active")));
   if (rows.length === 0) return result;
   result.checked = rows.length;
   const now = new Date();
 
   const verdicts: { id: string; retire?: "link_dead" | "closed_page" }[] = [];
+  // Careers-page jobs that reached a 2xx text/html page check — the circuit
+  // breaker's denominator (JSON-platform jobs are never page-checked).
+  let pageChecked = 0;
   for (const row of rows) {
     try {
       const res = await followRedirects(fetcher, row.applyUrl);
@@ -87,6 +99,11 @@ export async function linkCheckSlice(
       }
       const type = res.headers.get("content-type") ?? "";
       if (res.status >= 200 && res.status < 300 && type.includes("text/html")) {
+        if (row.platform !== "careers_page") {
+          verdicts.push({ id: row.id }); // feed is authoritative — just stamp
+          continue;
+        }
+        pageChecked++;
         const html = await res.text();
         // Page check reads Browser Run `markdown`; on any browser error fall
         // back to the fetched HTML (spec §Browser Run / page check).
@@ -124,7 +141,7 @@ export async function linkCheckSlice(
     }
   }
 
-  const breaker = result.closedPage > rows.length * 0.25;
+  const breaker = pageChecked > 0 && result.closedPage > pageChecked * 0.25;
   if (breaker) {
     result.breakerTripped = true;
     result.closedPage = 0;

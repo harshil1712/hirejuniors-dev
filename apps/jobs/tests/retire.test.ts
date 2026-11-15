@@ -79,6 +79,25 @@ describe("expireJobs", () => {
   });
 });
 
+const CP_SRC = "src_cp_retire";
+const GH_SRC = "src_gh_retire";
+
+beforeAll(async () => {
+  await seedCompany({ id: "cmp_retire02", slug: "cpco", name: "CP Co" });
+  await seedSource({
+    id: CP_SRC,
+    companyId: "cmp_retire02",
+    platform: "careers_page",
+    board: "https://cp.example.com/careers",
+  });
+  await seedSource({
+    id: GH_SRC,
+    companyId: "cmp_retire02",
+    platform: "greenhouse",
+    board: "ghco",
+  });
+});
+
 describe("linkCheckSlice", () => {
   it("404 after redirect → link_dead", async () => {
     const id = await insertJob({ applyUrl: "https://x.test/gone" });
@@ -94,8 +113,64 @@ describe("linkCheckSlice", () => {
     expect(j.retireReason).toBe("link_dead");
   });
 
+  it("greenhouse 404 → link_dead (steps 1–2 apply to every platform)", async () => {
+    const id = await insertJob({ sourceId: GH_SRC, applyUrl: "https://x.test/ghgone" });
+    const res = await linkCheckSlice(
+      db(),
+      fetcher({ ghgone: new Response(null, { status: 404 }) }),
+      noAi,
+      [id],
+    );
+    expect(res.linkDead).toBe(1);
+    expect((await getJob(id)).retireReason).toBe("link_dead");
+  });
+
+  it("greenhouse 2xx 'closed' page → stamped only, no browser or AI call", async () => {
+    const id = await insertJob({ sourceId: GH_SRC, applyUrl: "https://x.test/ghclosed" });
+    const browserCalls: string[] = [];
+    let aiCalled = 0;
+    const spyBrowser = {
+      msUsed: 0,
+      links: () => Promise.reject(new Error("no")),
+      markdown: (u: string) => {
+        browserCalls.push(u);
+        return Promise.resolve("This position is closed.");
+      },
+    };
+    const spyAi: AiModels = {
+      decide: () => {
+        aiCalled++;
+        return Promise.resolve({ answers: { open: { type: "noul", noul: 0 } }, inputTokens: 1 });
+      },
+      extract: () => Promise.reject(new Error("no")),
+    };
+    const res = await linkCheckSlice(db(), fetcher({}), spyAi, [id], spyBrowser);
+    expect(res.checked).toBe(1);
+    expect(res.closedPage).toBe(0);
+    expect(browserCalls).toEqual([]);
+    expect(aiCalled).toBe(0);
+    const j = await getJob(id);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).not.toBeNull();
+  });
+
+  it("breaker denominator counts only page-checked careers_page jobs", async () => {
+    // 1 careers_page closed + 3 greenhouse 2xx: denominator is 1, not 4,
+    // so 100% > 25% trips the breaker and the cp job is stamped, not retired.
+    const cp = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/cpclosed" });
+    const gh = await Promise.all(
+      [1, 2, 3].map((i) => insertJob({ sourceId: GH_SRC, applyUrl: `https://x.test/ghopen${i}` })),
+    );
+    const res = await linkCheckSlice(db(), fetcher({}), ai(0.05), [cp, ...gh]);
+    expect(res.breakerTripped).toBe(true);
+    const j = await getJob(cp);
+    expect(j.status).toBe("active");
+    expect(j.lastCheckedAt).not.toBeNull();
+    for (const id of gh) expect((await getJob(id)).status).toBe("active");
+  });
+
   it("text under 200 chars → stamped, no AI call", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/short" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/short" });
     const res = await linkCheckSlice(
       db(),
       fetcher({
@@ -115,9 +190,9 @@ describe("linkCheckSlice", () => {
 
   it("noul ≤ 0.15 → closed_page", async () => {
     // 1 of 4 = 25%, not >25% — breaker stays off.
-    const closed = await insertJob({ applyUrl: "https://x.test/closedpage" });
+    const closed = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/closedpage" });
     const others = await Promise.all(
-      [1, 2, 3].map((i) => insertJob({ applyUrl: `https://x.test/shorty${i}` })),
+      [1, 2, 3].map((i) => insertJob({ sourceId: CP_SRC, applyUrl: `https://x.test/shorty${i}` })),
     );
     const res = await linkCheckSlice(
       db(),
@@ -139,7 +214,7 @@ describe("linkCheckSlice", () => {
   });
 
   it("noul = 0.5 → stamped only", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/open" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/open" });
     await linkCheckSlice(db(), fetcher({}), ai(0.5), [id]);
     const j = await getJob(id);
     expect(j.status).toBe("active");
@@ -148,11 +223,11 @@ describe("linkCheckSlice", () => {
 
   it("breaker: >25% closed_page → none retire closed_page; link_dead still applies", async () => {
     const ids = await Promise.all(
-      [1, 2, 3, 4].map((i) => insertJob({ applyUrl: `https://x.test/cb${i}` })),
+      [1, 2, 3, 4].map((i) => insertJob({ sourceId: CP_SRC, applyUrl: `https://x.test/cb${i}` })),
     );
-    const dead = await insertJob({ applyUrl: "https://x.test/dead" });
+    const dead = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/dead" });
     // 5 closed_page-worthy jobs: add one more
-    const ids5 = [...ids, await insertJob({ applyUrl: "https://x.test/cb5" })];
+    const ids5 = [...ids, await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/cb5" })];
     const res = await linkCheckSlice(
       db(),
       fetcher({ dead: new Response(null, { status: 404 }) }),
@@ -169,7 +244,7 @@ describe("linkCheckSlice", () => {
   });
 
   it("model error → untouched", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/err" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/err" });
     const res = await linkCheckSlice(db(), fetcher({}), noAi, [id]);
     expect(res.checked).toBe(1);
     const j = await getJob(id);
@@ -192,7 +267,7 @@ describe("linkCheckSlice — Browser Run markdown", () => {
   );
 
   it("browser markdown is used for the page check", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/bwpage" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/bwpage" });
     const calls: string[] = [];
     let state = "";
     const spyAi: AiModels = {
@@ -213,7 +288,7 @@ describe("linkCheckSlice — Browser Run markdown", () => {
   });
 
   it("browser error falls back to htmlToText", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/bwerr" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/bwerr" });
     const failing = {
       msUsed: 0,
       links: () => Promise.reject(new Error("no")),
@@ -225,7 +300,7 @@ describe("linkCheckSlice — Browser Run markdown", () => {
   });
 
   it("browser markdown under 200 chars → stamped, no AI call", async () => {
-    const id = await insertJob({ applyUrl: "https://x.test/bwshort" });
+    const id = await insertJob({ sourceId: CP_SRC, applyUrl: "https://x.test/bwshort" });
     const res = await linkCheckSlice(db(), fetcher({}), noAi, [id], okBrowser("tiny"));
     expect(res.checked).toBe(1);
     const j = await getJob(id);
